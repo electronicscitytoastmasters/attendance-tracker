@@ -5,5 +5,5 @@ import react from '@vitejs/plugin-react'
 // e.g. if your repo URL is github.com/yourname/attendance → base: '/attendance/'
 export default defineConfig({
   plugins: [react()],
-  base: '/attendance/',
+  base: process.env.VERCEL ? '/' : '/attendance/',
 })
