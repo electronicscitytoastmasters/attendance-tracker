@@ -60,7 +60,21 @@ function readRows(sheetName) {
   const [header, ...rows] = sheet.getDataRange().getValues();
   return rows
     .filter(r => r.some(c => c !== ""))  // skip completely empty rows
-    .map(r => Object.fromEntries(header.map((h, i) => [h, String(r[i] ?? "").trim()])));
+    .map(r => Object.fromEntries(header.map((h, i) => {
+      let val = r[i];
+      if (val instanceof Date) {
+        if (h === "_timestamp_utc") {
+          val = val.toISOString();
+        } else {
+          try {
+            val = Utilities.formatDate(val, ss().getSpreadsheetTimeZone(), "yyyy-MM-dd");
+          } catch (e) {
+            val = Utilities.formatDate(val, "GMT", "yyyy-MM-dd");
+          }
+        }
+      }
+      return [h, String(val ?? "").trim()];
+    })));
 }
 
 /** Overwrite a tab: clear content, write header + rows */
