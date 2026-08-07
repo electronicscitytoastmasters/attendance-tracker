@@ -25,7 +25,7 @@ import * as XLSX from "xlsx";
 import { idbGet, idbSet } from "./idb.js";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
-export const MODE = "excel";   // "local" | "excel" | "sheets"
+export const MODE = "sheets";   // "local" | "excel" | "sheets"
 export const SHEETS_URL = import.meta.env.VITE_SHEETS_URL || "";  // Paste Apps Script Web App URL here (sheets mode)
 
 // ─── Tab names ────────────────────────────────────────────────────────────────
