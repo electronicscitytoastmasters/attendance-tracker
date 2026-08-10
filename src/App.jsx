@@ -248,6 +248,7 @@ export default function AttendanceTracker() {
   const [term, setTerm] = useState(null);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [attByS, setAttByS] = useState({});
+  const [pendingAtt, setPendingAtt] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [actualError, setActualError] = useState(null);
@@ -381,6 +382,26 @@ export default function AttendanceTracker() {
   const saveSessions = async (list) => { setSessions(list); await setJSON("sessions", list); };
   const setActive = async (id) => { setActiveSessionId(id); await setJSON("activeSessionId", id); };
 
+  const mergedAtt = useMemo(() => {
+    const res = { ...attByS };
+    Object.keys(pendingAtt).forEach((sId) => {
+      res[sId] = { ...(res[sId] || {}), ...pendingAtt[sId] };
+    });
+    return res;
+  }, [attByS, pendingAtt]);
+
+  const savePendingAttendance = async () => {
+    const updatedSessions = Object.keys(pendingAtt);
+    const newAttByS = { ...attByS };
+    for (const sId of updatedSessions) {
+      const merged = { ...(newAttByS[sId] || {}), ...pendingAtt[sId] };
+      newAttByS[sId] = merged;
+      await setJSON(`att:${sId}`, merged);
+    }
+    setAttByS(newAttByS);
+    setPendingAtt({});
+  };
+
   const markAttendance = (sessionId, memberId, present, method, mode = null) => {
     const record = { p: present, t: new Date().toISOString(), m: method, mode: present ? mode : null };
     setAttByS((prev) => {
@@ -438,7 +459,7 @@ export default function AttendanceTracker() {
     const occurred = sessions.filter((s) => s.date <= today);
 
     const perSession = occurred.map((s) => {
-      const att = attByS[s.id] || {};
+      const att = mergedAtt[s.id] || {};
       const eligible = members.filter((m) => isEligible(m, s.date));
       const present = eligible.filter((m) => att[m.id]?.p).length;
       const total = eligible.length || 1;
@@ -450,7 +471,7 @@ export default function AttendanceTracker() {
 
     const perMember = members.map((m) => {
       const eligible = occurred.filter((s) => isEligible(m, s.date));
-      const attended = eligible.filter((s) => attByS[s.id]?.[m.id]?.p).length;
+      const attended = eligible.filter((s) => mergedAtt[s.id]?.[m.id]?.p).length;
       const pct = eligible.length ? Math.round((attended / eligible.length) * 100) : 0;
       return { ...m, attended, eligibleCount: eligible.length, pct };
     });
@@ -542,29 +563,29 @@ export default function AttendanceTracker() {
     <div className="font-body" style={{ background: PAPER, color: INK, minHeight: "100svh" }}>
       <FontStyle />
 
-      {/* ── Header (title + primary nav consolidated) ── */}
-      <header style={{ padding: "16px 20px", borderBottom: `1px solid ${TM_BLUE}22`, background: `linear-gradient(180deg, ${PAPER} 0%, ${PAPER_RAISED} 100%)` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      {/* ── Header (title + primary nav consolidated with modern glassmorphism) ── */}
+      <header className="glass-header" style={{ padding: "14px 24px", position: "sticky", top: 0, zIndex: 50 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, maxWidth: 1440, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 8, background: TM_BLUE, display: "flex", alignItems: "center", justifyContent: "center", color: PAPER, fontWeight: 700 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: TM_BLUE, display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center", color: PAPER, fontWeight: 700, fontSize: 18, boxShadow: "0 4px 12px rgba(0,65,101,0.2)" }}>
               ET
             </div>
             <div>
-              <p className="font-mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: TM_BLUE, margin: 0 }}>
+              <p className="font-mono" style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: TM_BLUE, margin: 0, fontWeight: 600 }}>
                 Toastmasters Club Dashboard
               </p>
-              <h1 className="font-display" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.15, margin: 0 }}>
+              <h1 className="font-display" style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.15, margin: 0, letterSpacing: "-0.01em" }}>
                 Electronics City Toastmasters
               </h1>
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div className="font-mono" style={{ fontSize: 12, color: INK_MUTED, textAlign: "right", marginRight: 8 }}>
-              <div>{members.length} members</div>
-              <div>{sessions.length} sessions</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div className="font-mono" style={{ fontSize: 11, color: INK_MUTED, textAlign: "right", marginRight: 8, lineHeight: 1.4 }}>
+              <div><strong style={{ color: TM_BLUE }}>{members.length}</strong> members</div>
+              <div><strong style={{ color: TM_BLUE }}>{sessions.length}</strong> sessions</div>
             </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center", overflowX: "auto" }}>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", overflowX: "auto", background: "rgba(0,65,101,0.05)", padding: 4, borderRadius: 8 }}>
               {[
                 { id: "checkin",   label: "Check-In" },
                 { id: "dashboard", label: "Dashboard" },
@@ -578,10 +599,11 @@ export default function AttendanceTracker() {
                   className="app-nav-btn"
                   onClick={() => setTab(id)}
                   style={{
-                    padding: "8px 12px", fontSize: 14, fontWeight: 600,
-                    whiteSpace: "nowrap", color: tab === id ? TM_BLUE : INK_MUTED,
-                    borderBottom: tab === id ? `3px solid ${TM_BLUE}` : "3px solid transparent",
-                    background: "none", cursor: "pointer", borderRadius: 6,
+                    padding: "6px 14px", fontSize: 13, fontWeight: 600,
+                    whiteSpace: "nowrap", color: tab === id ? PAPER_RAISED : INK_MUTED,
+                    background: tab === id ? TM_BLUE : "transparent",
+                    cursor: "pointer", borderRadius: 6,
+                    boxShadow: tab === id ? "0 4px 10px rgba(0,65,101,0.15)" : "none",
                   }}
                 >
                   {label}
@@ -594,10 +616,10 @@ export default function AttendanceTracker() {
 
       {/* ── Main ── */}
       <main style={{
-        padding: 20,
+        padding: "24px 20px",
         maxWidth: tab === "monthly" ? 1440 : (tab === "matrix" || tab === "admin" || tab === "dashboard") ? 1200 : 800,
         margin: "0 auto",
-        transition: "max-width 0.2s ease"
+        transition: "max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
       }}>
         {tab === "checkin" && (
           <CheckIn
@@ -613,17 +635,26 @@ export default function AttendanceTracker() {
           <Dashboard
             members={members} stats={stats}
             activeSession={activeSession} activeAtt={activeAtt}
-            sessions={sessions} attByS={attByS}
+            sessions={sessions} attByS={mergedAtt}
           />
         )}
         {tab === "monthly" && (
           <MonthlyReport
-            members={members} sessions={sessions} attByS={attByS}
+            members={members} sessions={sessions} attByS={mergedAtt}
             stats={stats} term={term}
           />
         )}
         {tab === "matrix" && (
-          <Matrix members={members} sessions={sessions} attByS={attByS} stats={stats} />
+          <Matrix
+            members={members}
+            sessions={sessions}
+            attByS={mergedAtt}
+            dbAttByS={attByS}
+            stats={stats}
+            pendingAtt={pendingAtt}
+            setPendingAtt={setPendingAtt}
+            savePendingAttendance={savePendingAttendance}
+          />
         )}
         {tab === "admin" && (
           <Admin
@@ -966,7 +997,10 @@ function Dashboard({ members, stats, activeSession, activeAtt, sessions, attByS 
 }
 
 // ─── Term Matrix tab ──────────────────────────────────────────────────────────
-function Matrix({ members, sessions, attByS, stats }) {
+function Matrix({
+  members, sessions, attByS, dbAttByS, stats,
+  pendingAtt, setPendingAtt, savePendingAttendance
+}) {
   const sorted = sessions.slice().sort((a, b) => a.date.localeCompare(b.date));
   const membersSorted = members
     .slice()
@@ -974,26 +1008,147 @@ function Matrix({ members, sessions, attByS, stats }) {
 
   const pctColor = (pct) => (pct >= 75 ? FOREST : pct >= 50 ? BRASS : RUST);
 
+  const pendingCount = Object.values(pendingAtt || {}).reduce(
+    (acc, val) => acc + Object.keys(val || {}).length,
+    0
+  );
+
+  const pendingChangesList = [];
+  Object.entries(pendingAtt || {}).forEach(([sId, membersMap]) => {
+    const sess = sessions.find((s) => s.id === sId);
+    if (!sess) return;
+    Object.entries(membersMap || {}).forEach(([mId, newRec]) => {
+      const mem = members.find((m) => m.id === mId);
+      if (!mem) return;
+      const oldRec = dbAttByS?.[sId]?.[mId];
+      const getStatusLabel = (rec) => {
+        if (!rec || !rec.p) return "Absent";
+        return rec.mode === "online" ? "Online" : "In-Person";
+      };
+      pendingChangesList.push({
+        id: `${sId}-${mId}`,
+        name: mem.name,
+        date: fmtDate(sess.date),
+        oldStatus: getStatusLabel(oldRec),
+        newStatus: getStatusLabel(newRec),
+      });
+    });
+  });
+
   if (members.length === 0) return <Empty text="Add members in the Admin tab to see the term matrix." />;
   if (sorted.length === 0) return <Empty text="No sessions logged yet. Start your first roll call from the Admin tab." />;
 
   return (
     <div>
-      {/* Legend */}
-      <div className="font-mono" style={{
-        display: "flex", flexWrap: "wrap", gap: "8px 16px",
-        marginBottom: 8, fontSize: 12, color: INK_MUTED,
+      {/* Legend and Actions container */}
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "12px",
+        marginBottom: 12,
       }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <Check size={13} style={{ color: FOREST }} /> In-person
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <Video size={13} style={{ color: TEAL }} /> Online
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <X size={11} style={{ color: LINE }} /> Absent
-        </span>
-        <span>· Not yet happened</span>
+        {/* Legend */}
+        <div className="font-mono" style={{
+          display: "flex", flexWrap: "wrap", gap: "8px 16px",
+          fontSize: 12, color: INK_MUTED,
+        }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <Check size={13} style={{ color: FOREST }} /> In-person
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <Video size={13} style={{ color: TEAL }} /> Online
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <X size={11} style={{ color: LINE }} /> Absent
+          </span>
+          <span>· Not yet happened</span>
+        </div>
+
+        {/* Action Buttons */}
+        {pendingCount > 0 && (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: "8px",
+            animation: "stampIn 0.25s ease-out",
+            background: "rgba(156,122,46,0.06)",
+            padding: "10px 14px",
+            borderRadius: "8px",
+            border: `1px dashed ${BRASS}44`,
+            minWidth: "280px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%", justifyContent: "space-between" }}>
+              <span className="font-mono" style={{ fontSize: 12, color: BRASS, fontWeight: 600 }}>
+                {pendingCount} unsaved change{pendingCount > 1 ? "s" : ""}
+              </span>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={savePendingAttendance}
+                  style={{
+                    background: FOREST,
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    boxShadow: "0 2px 6px rgba(63,107,82,0.2)",
+                  }}
+                >
+                  <Check size={13} /> Confirm
+                </button>
+                <button
+                  onClick={() => setPendingAtt({})}
+                  style={{
+                    background: "transparent",
+                    color: RUST,
+                    border: `1px solid ${RUST}44`,
+                    borderRadius: "6px",
+                    padding: "5px 11px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <X size={13} /> Discard
+                </button>
+              </div>
+            </div>
+
+            {/* List of changes */}
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+              width: "100%",
+              borderTop: `1px solid ${LINE}`,
+              paddingTop: "8px",
+              maxHeight: "150px",
+              overflowY: "auto",
+              alignItems: "flex-start",
+            }}>
+              {pendingChangesList.map((chg) => (
+                <div key={chg.id} style={{ fontSize: 11, color: INK, display: "flex", gap: "6px", alignItems: "center", width: "100%" }}>
+                  <strong style={{ color: TM_BLUE, whiteSpace: "nowrap" }}>{chg.name}</strong> 
+                  <span style={{ color: INK_MUTED, whiteSpace: "nowrap" }}>({chg.date}):</span>
+                  <span style={{ textDecoration: "line-through", color: RUST, opacity: 0.8, whiteSpace: "nowrap" }}>{chg.oldStatus}</span>
+                  <span style={{ color: INK_MUTED }}>➔</span>
+                  <span style={{ color: FOREST, fontWeight: 600, whiteSpace: "nowrap" }}>{chg.newStatus}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -1042,12 +1197,63 @@ function Matrix({ members, sessions, attByS, stats }) {
                   {sorted.map((s) => {
                     const rec = attByS[s.id]?.[m.id];
                     const occurred = s.date <= todayStr();
+                    const isPending = pendingAtt[s.id]?.[m.id] !== undefined;
+
                     if (!isEligible(m, s.date))
                       return <td key={s.id} style={{ textAlign: "center", color: LINE }}>–</td>;
                     if (!occurred)
                       return <td key={s.id} style={{ textAlign: "center", color: LINE }}>·</td>;
+
+                    const handleDoubleClick = () => {
+                      let newPresent = true;
+                      let newMode = "in-person";
+                      if (!rec?.p) {
+                        newPresent = true;
+                        newMode = "in-person";
+                      } else if (rec.mode !== "online") {
+                        newPresent = true;
+                        newMode = "online";
+                      } else {
+                        newPresent = false;
+                        newMode = null;
+                      }
+
+                      const newRecord = {
+                        p: newPresent,
+                        t: new Date().toISOString(),
+                        m: "admin",
+                        mode: newPresent ? newMode : null
+                      };
+
+                      setPendingAtt((prev) => ({
+                        ...prev,
+                        [s.id]: { ...(prev[s.id] || {}), [m.id]: newRecord }
+                      }));
+                    };
+
                     return (
-                      <td key={s.id} style={{ textAlign: "center" }}>
+                      <td
+                        key={s.id}
+                        style={{
+                          textAlign: "center",
+                          cursor: "pointer",
+                          transition: "background-color 0.15s ease, outline 0.15s ease",
+                          backgroundColor: isPending ? "rgba(253, 187, 48, 0.12)" : "transparent",
+                          outline: isPending ? `1px dashed ${BRASS}` : "none",
+                        }}
+                        onDoubleClick={handleDoubleClick}
+                        title="Double-click to cycle status: Absent ➔ In-Person ➔ Online"
+                        onMouseEnter={(e) => {
+                          if (!isPending) {
+                            e.currentTarget.style.backgroundColor = "rgba(0,65,101,0.08)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isPending) {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                          }
+                        }}
+                      >
                         {rec?.p
                           ? rec.mode === "online"
                             ? <Video size={13} style={{ color: TEAL, display: "inline" }} />

@@ -354,9 +354,10 @@ function CanvasSectionLabel({ children }) {
 function CanvasCard({ children, style = {} }) {
   return (
     <div className="mr-card" style={{
-      borderRadius: 10, padding: 16, background: "white",
-      border: `1px solid ${LINE}`, display: "flex",
-      flexDirection: "column", gap: 12, ...style,
+      borderRadius: 12, padding: "18px 20px", background: "white",
+      border: `1px solid rgba(217, 210, 192, 0.55)`, display: "flex",
+      flexDirection: "column", gap: 12,
+      boxShadow: "0 8px 20px -6px rgba(27, 36, 48, 0.04), 0 2px 6px -1px rgba(27, 36, 48, 0.02)", ...style,
     }}>{children}</div>
   );
 }
