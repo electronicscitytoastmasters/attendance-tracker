@@ -2,13 +2,15 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   Check, X, QrCode, Users, TrendingUp, Download, Plus, Search,
-  UserCheck, Calendar, Settings2, Trash2, ChevronRight, Star, Video, MapPin
+  UserCheck, Calendar, Settings2, Trash2, ChevronRight, Star, Video, MapPin,
+  BarChart3, CalendarDays, AlertCircle,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from "recharts";
 import { getJSON, setJSON, initStorage, getFileName, MODE } from "./storage.js";
 import FileSetup from "./FileSetup.jsx";
+import MonthlyReport from "./MonthlyReport.jsx";
 
 // ─── Design tokens ───────────────────────────────────────────────────────────
 const INK = "#1B2430";
@@ -20,6 +22,9 @@ const RUST = "#9C4A32";
 const FOREST = "#3F6B52";
 const TEAL = "#2E6E8E";
 const LINE = "#D9D2C0";
+const TM_BLUE = "#004165";
+const TM_RED = "#C8102E";
+const TM_GOLD = "#FDBB30";
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -189,6 +194,17 @@ function downloadWorkbook(membersList, sessionsList, attMap, filenameLabel) {
 const FontStyle = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+    body {
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+      color: ${INK};
+      background: ${PAPER};
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    button, input, textarea, select {
+      transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    }
     .font-display { font-family: 'Fraunces', serif; }
     .font-body    { font-family: 'Inter', sans-serif; }
     .font-mono    { font-family: 'IBM Plex Mono', monospace; }
@@ -198,7 +214,27 @@ const FontStyle = () => (
       100% { opacity: 1; transform: scale(1) rotate(-7deg); }
     }
     .stamp-anim { animation: stampIn 0.5s cubic-bezier(.2,.9,.3,1.1); }
-    .tab-active  { border-bottom: 3px solid ${BRASS}; }
+    .app-card {
+      transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    }
+    .app-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 40px rgba(27,36,48,0.12);
+      border-color: rgba(0,65,101,0.16);
+    }
+    .app-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(27,36,48,0.12);
+    }
+    .app-button:focus-visible {
+      outline: 3px solid rgba(200,16,46,0.24);
+      outline-offset: 2px;
+    }
+    .app-nav-btn { transition: color 0.2s ease, border-color 0.2s ease; }
+    .app-nav-btn:hover { color: ${TM_BLUE}; }
+    .app-tag { transition: transform 0.2s ease, background 0.2s ease; }
+    .app-tag:hover { transform: translateY(-1px); background: rgba(220,205,130,0.16); }
+    .tab-active  { border-bottom: 3px solid ${TM_BLUE}; }
     ::-webkit-scrollbar       { height: 8px; width: 8px; }
     ::-webkit-scrollbar-thumb { background: ${LINE}; border-radius: 4px; }
   `}</style>
@@ -212,14 +248,19 @@ export default function AttendanceTracker() {
   const [term, setTerm] = useState(null);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [attByS, setAttByS] = useState({});
+  const [pendingAtt, setPendingAtt] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [actualError, setActualError] = useState(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [needsFileSetup, setNeedsFileSetup] = useState(false);
 
   const loadAll = useCallback(async (isSilent = false) => {
     if (!isSilent) {
       setLoading(true);
       setLoadError(false);
+      setActualError(null);
+      setShowErrorDetails(false);
     }
     const withTimeout = (p, ms = 15000) =>
       Promise.race([
@@ -228,61 +269,82 @@ export default function AttendanceTracker() {
       ]);
 
     try {
-      const [m, s, a, t] = await withTimeout(
-        Promise.all([
-          getJSON("members"),
-          getJSON("sessions"),
-          getJSON("activeSessionId"),
-          getJSON("term"),
-        ]),
-      );
-
-      const membersArr = m || [];
-      let termObj = t;
-      if (!termObj) {
-        termObj = termForDate(todayStr());
-        await setJSON("term", termObj);
+      let bulkData = null;
+      try {
+        bulkData = await withTimeout(getJSON("all"), 15000);
+      } catch (err) {
+        console.warn("Bulk load failed or not supported, falling back...", err);
       }
 
-      let sessionsArr = s;
-      if (!sessionsArr || sessionsArr.length === 0) {
-        sessionsArr = allSaturdaysInRange(termObj.start, termObj.end).map(
-          (date) => ({ id: uid(), date, label: `Saturday, ${fmtDate(date)}` }),
-        );
-        await setJSON("sessions", sessionsArr);
+      let membersArr, sessionsArr, activeId, termObj, attMap;
+
+      if (bulkData && bulkData.members && bulkData.sessions) {
+        membersArr = bulkData.members;
+        sessionsArr = bulkData.sessions;
+        activeId = bulkData.activeSessionId || "";
+        termObj = bulkData.term;
+        attMap = bulkData.attendance || {};
       } else {
-        // One-time repair: earlier versions stored dates via toISOString(), which
-        // can shift the date back a day. Only nudge Fridays to Saturday.
-        let changed = false;
-        sessionsArr = sessionsArr.map((sess) => {
-          const d = ymdToDate(sess.date);
-          const dow = d.getUTCDay();
-          if (dow !== 5) return sess;
-          changed = true;
-          d.setUTCDate(d.getUTCDate() + 1);
-          const fixedDate = toLocalDateStr(d);
-          return { ...sess, date: fixedDate, label: `Saturday, ${fmtDate(fixedDate)}` };
-        });
-        if (changed) await setJSON("sessions", sessionsArr);
+        const [m, s, a, t] = await withTimeout(
+          Promise.all([
+            getJSON("members"),
+            getJSON("sessions"),
+            getJSON("activeSessionId"),
+            getJSON("term"),
+          ]),
+        );
+
+        membersArr = m || [];
+        activeId = a || "";
+        termObj = t;
+
+        if (!termObj) {
+          termObj = termForDate(todayStr());
+          await setJSON("term", termObj);
+        }
+
+        sessionsArr = s;
+        if (!sessionsArr || sessionsArr.length === 0) {
+          sessionsArr = allSaturdaysInRange(termObj.start, termObj.end).map(
+            (date) => ({ id: uid(), date, label: `Saturday, ${fmtDate(date)}` }),
+          );
+          await setJSON("sessions", sessionsArr);
+        } else {
+          // One-time repair: earlier versions stored dates via toISOString(), which
+          // can shift the date back a day. Only nudge Fridays to Saturday.
+          let changed = false;
+          sessionsArr = sessionsArr.map((sess) => {
+            const d = ymdToDate(sess.date);
+            const dow = d.getUTCDay();
+            if (dow !== 5) return sess;
+            changed = true;
+            d.setUTCDate(d.getUTCDate() + 1);
+            const fixedDate = toLocalDateStr(d);
+            return { ...sess, date: fixedDate, label: `Saturday, ${fmtDate(fixedDate)}` };
+          });
+          if (changed) await setJSON("sessions", sessionsArr);
+        }
+
+        const attEntries = await withTimeout(
+          Promise.all(
+            sessionsArr.map(async (sess) => [
+              sess.id,
+              (await getJSON(`att:${sess.id}`)) || {},
+            ]),
+          ),
+        );
+        attMap = Object.fromEntries(attEntries);
       }
 
       setMembers(membersArr);
       setSessions(sessionsArr);
-      setTerm(termObj);
-      setActiveSessionId(a || "");
-
-      const attEntries = await withTimeout(
-        Promise.all(
-          sessionsArr.map(async (sess) => [
-            sess.id,
-            (await getJSON(`att:${sess.id}`)) || {},
-          ]),
-        ),
-      );
-      setAttByS(Object.fromEntries(attEntries));
+      setTerm(termObj || termForDate(todayStr()));
+      setActiveSessionId(activeId);
+      setAttByS(attMap);
     } catch (e) {
       console.error("loadAll failed", e);
       if (!isSilent) {
+        setActualError(e);
         setLoadError(true);
       }
     } finally {
@@ -319,6 +381,26 @@ export default function AttendanceTracker() {
   const saveMembers = async (list) => { setMembers(list); await setJSON("members", list); };
   const saveSessions = async (list) => { setSessions(list); await setJSON("sessions", list); };
   const setActive = async (id) => { setActiveSessionId(id); await setJSON("activeSessionId", id); };
+
+  const mergedAtt = useMemo(() => {
+    const res = { ...attByS };
+    Object.keys(pendingAtt).forEach((sId) => {
+      res[sId] = { ...(res[sId] || {}), ...pendingAtt[sId] };
+    });
+    return res;
+  }, [attByS, pendingAtt]);
+
+  const savePendingAttendance = async () => {
+    const updatedSessions = Object.keys(pendingAtt);
+    const newAttByS = { ...attByS };
+    for (const sId of updatedSessions) {
+      const merged = { ...(newAttByS[sId] || {}), ...pendingAtt[sId] };
+      newAttByS[sId] = merged;
+      await setJSON(`att:${sId}`, merged);
+    }
+    setAttByS(newAttByS);
+    setPendingAtt({});
+  };
 
   const markAttendance = (sessionId, memberId, present, method, mode = null) => {
     const record = { p: present, t: new Date().toISOString(), m: method, mode: present ? mode : null };
@@ -377,7 +459,7 @@ export default function AttendanceTracker() {
     const occurred = sessions.filter((s) => s.date <= today);
 
     const perSession = occurred.map((s) => {
-      const att = attByS[s.id] || {};
+      const att = mergedAtt[s.id] || {};
       const eligible = members.filter((m) => isEligible(m, s.date));
       const present = eligible.filter((m) => att[m.id]?.p).length;
       const total = eligible.length || 1;
@@ -389,7 +471,7 @@ export default function AttendanceTracker() {
 
     const perMember = members.map((m) => {
       const eligible = occurred.filter((s) => isEligible(m, s.date));
-      const attended = eligible.filter((s) => attByS[s.id]?.[m.id]?.p).length;
+      const attended = eligible.filter((s) => mergedAtt[s.id]?.[m.id]?.p).length;
       const pct = eligible.length ? Math.round((attended / eligible.length) * 100) : 0;
       return { ...m, attended, eligibleCount: eligible.length, pct };
     });
@@ -424,17 +506,55 @@ export default function AttendanceTracker() {
         minHeight: "100svh", display: "flex", flexDirection: "column",
         alignItems: "center", justifyContent: "center", gap: 12,
         background: PAPER, color: INK, padding: "0 24px", textAlign: "center",
+        maxWidth: 480, margin: "0 auto",
       }}>
-        <p className="font-display" style={{ fontSize: 18 }}>Couldn't load the roster</p>
-        <p style={{ fontSize: 14, color: INK_MUTED }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>📡</div>
+        <p className="font-display" style={{ fontSize: 20, fontWeight: 600 }}>Couldn't load the roster</p>
+        <p style={{ fontSize: 14, color: INK_MUTED, lineHeight: 1.5 }}>
           This is usually a temporary connection hiccup — your data is safe.
         </p>
-        <button onClick={loadAll} style={{
-          fontSize: 14, padding: "8px 16px", borderRadius: 6,
-          fontWeight: 500, marginTop: 8, background: INK, color: PAPER,
-        }}>
-          Try again
-        </button>
+        
+        <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+          <button className="app-button" onClick={() => loadAll(false)} style={{
+            fontSize: 14, padding: "10px 18px", borderRadius: 8,
+            fontWeight: 600, background: TM_BLUE, color: PAPER, cursor: "pointer",
+            border: "none", boxShadow: "0 10px 24px rgba(0,65,101,0.14)",
+          }}>
+            Try again
+          </button>
+          
+          {actualError && (
+            <button className="app-button" onClick={() => setShowErrorDetails(prev => !prev)} style={{
+              fontSize: 14, padding: "10px 18px", borderRadius: 8,
+              fontWeight: 600, background: "white", color: TM_BLUE, cursor: "pointer",
+              border: `1px solid ${TM_BLUE}33`,
+            }}>
+              {showErrorDetails ? "Hide details" : "Show details"}
+            </button>
+          )}
+        </div>
+
+        {showErrorDetails && actualError && (
+          <div style={{
+            marginTop: 16, padding: 12, borderRadius: 6,
+            background: "#F7F5EC", border: `1px solid ${LINE}`,
+            textAlign: "left", width: "100%", boxSizing: "border-box",
+            overflowX: "auto",
+          }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: RUST, marginBottom: 4 }}>
+              Error: {actualError.message || String(actualError)}
+            </p>
+            {actualError.stack && (
+              <pre style={{
+                fontSize: 11, color: INK_MUTED, margin: 0,
+                fontFamily: "IBM Plex Mono, monospace", whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+              }}>
+                {actualError.stack}
+              </pre>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -443,60 +563,64 @@ export default function AttendanceTracker() {
     <div className="font-body" style={{ background: PAPER, color: INK, minHeight: "100svh" }}>
       <FontStyle />
 
-      {/* ── Header ── */}
-      <header style={{ padding: "24px 20px 12px", borderBottom: `1px solid ${LINE}` }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div>
-            <p className="font-mono" style={{
-              fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: BRASS,
-            }}>
-              Weekly Attendance Tracker
-            </p>
-            <h1 className="font-display" style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2 }}>
-              Electronics City Toastmasters Club
-            </h1>
-            <p style={{ fontSize: 12, marginTop: 2, color: INK_MUTED }}>
-              Term: {term.label} · Meets Saturdays
-            </p>
+      {/* ── Header (title + primary nav consolidated with modern glassmorphism) ── */}
+      <header className="glass-header" style={{ padding: "14px 24px", position: "sticky", top: 0, zIndex: 50 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, maxWidth: 1440, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: TM_BLUE, display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center", color: PAPER, fontWeight: 700, fontSize: 18, boxShadow: "0 4px 12px rgba(0,65,101,0.2)" }}>
+              ET
+            </div>
+            <div>
+              <p className="font-mono" style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: TM_BLUE, margin: 0, fontWeight: 600 }}>
+                Toastmasters Club Dashboard
+              </p>
+              <h1 className="font-display" style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.15, margin: 0, letterSpacing: "-0.01em" }}>
+                Electronics City Toastmasters
+              </h1>
+            </div>
           </div>
-          <div className="font-mono" style={{ fontSize: 12, color: INK_MUTED, textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-            <div>{members.length} members</div>
-            <div>{sessions.length} sessions</div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div className="font-mono" style={{ fontSize: 11, color: INK_MUTED, textAlign: "right", marginRight: 8, lineHeight: 1.4 }}>
+              <div><strong style={{ color: TM_BLUE }}>{members.length}</strong> members</div>
+              <div><strong style={{ color: TM_BLUE }}>{sessions.length}</strong> sessions</div>
+            </div>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", overflowX: "auto", background: "rgba(0,65,101,0.05)", padding: 4, borderRadius: 8 }}>
+              {[
+                { id: "checkin",   label: "Check-In" },
+                { id: "dashboard", label: "Dashboard" },
+                { id: "monthly",   label: "Reports" },
+                { id: "matrix",    label: "Matrix" },
+                { id: "admin",     label: "Admin" },
+              ].map(({ id, label }) => (
+                <button
+                  key={id}
+                  id={`tab-${id}`}
+                  className="app-nav-btn"
+                  onClick={() => setTab(id)}
+                  style={{
+                    padding: "6px 14px", fontSize: 13, fontWeight: 600,
+                    whiteSpace: "nowrap", color: tab === id ? PAPER_RAISED : INK_MUTED,
+                    background: tab === id ? TM_BLUE : "transparent",
+                    cursor: "pointer", borderRadius: 6,
+                    boxShadow: tab === id ? "0 4px 10px rgba(0,65,101,0.15)" : "none",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* ── Nav ── */}
-      <nav style={{
-        display: "flex", padding: "0 8px",
-        borderBottom: `1px solid ${LINE}`, background: PAPER_RAISED,
-        overflowX: "auto",
-      }}>
-        {[
-          { id: "checkin",   label: "Check-In",    Icon: UserCheck },
-          { id: "dashboard", label: "Dashboard",   Icon: TrendingUp },
-          { id: "matrix",    label: "Term Matrix", Icon: Calendar },
-          { id: "admin",     label: "Admin",       Icon: Settings2 },
-        ].map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            id={`tab-${id}`}
-            onClick={() => setTab(id)}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "12px 16px", fontSize: 14, fontWeight: 500,
-              whiteSpace: "nowrap", color: tab === id ? INK : INK_MUTED,
-              borderBottom: tab === id ? `3px solid ${BRASS}` : "3px solid transparent",
-              background: "none",
-            }}
-          >
-            <Icon size={15} /> {label}
-          </button>
-        ))}
-      </nav>
-
       {/* ── Main ── */}
-      <main style={{ padding: 20, maxWidth: 720, margin: "0 auto" }}>
+      <main style={{
+        padding: "24px 20px",
+        maxWidth: tab === "monthly" ? 1440 : (tab === "matrix" || tab === "admin" || tab === "dashboard") ? 1200 : 800,
+        margin: "0 auto",
+        transition: "max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
+      }}>
         {tab === "checkin" && (
           <CheckIn
             members={members}
@@ -511,11 +635,26 @@ export default function AttendanceTracker() {
           <Dashboard
             members={members} stats={stats}
             activeSession={activeSession} activeAtt={activeAtt}
-            sessions={sessions} attByS={attByS}
+            sessions={sessions} attByS={mergedAtt}
+          />
+        )}
+        {tab === "monthly" && (
+          <MonthlyReport
+            members={members} sessions={sessions} attByS={mergedAtt}
+            stats={stats} term={term}
           />
         )}
         {tab === "matrix" && (
-          <Matrix members={members} sessions={sessions} attByS={attByS} stats={stats} />
+          <Matrix
+            members={members}
+            sessions={sessions}
+            attByS={mergedAtt}
+            dbAttByS={attByS}
+            stats={stats}
+            pendingAtt={pendingAtt}
+            setPendingAtt={setPendingAtt}
+            savePendingAttendance={savePendingAttendance}
+          />
         )}
         {tab === "admin" && (
           <Admin
@@ -858,7 +997,10 @@ function Dashboard({ members, stats, activeSession, activeAtt, sessions, attByS 
 }
 
 // ─── Term Matrix tab ──────────────────────────────────────────────────────────
-function Matrix({ members, sessions, attByS, stats }) {
+function Matrix({
+  members, sessions, attByS, dbAttByS, stats,
+  pendingAtt, setPendingAtt, savePendingAttendance
+}) {
   const sorted = sessions.slice().sort((a, b) => a.date.localeCompare(b.date));
   const membersSorted = members
     .slice()
@@ -866,26 +1008,147 @@ function Matrix({ members, sessions, attByS, stats }) {
 
   const pctColor = (pct) => (pct >= 75 ? FOREST : pct >= 50 ? BRASS : RUST);
 
+  const pendingCount = Object.values(pendingAtt || {}).reduce(
+    (acc, val) => acc + Object.keys(val || {}).length,
+    0
+  );
+
+  const pendingChangesList = [];
+  Object.entries(pendingAtt || {}).forEach(([sId, membersMap]) => {
+    const sess = sessions.find((s) => s.id === sId);
+    if (!sess) return;
+    Object.entries(membersMap || {}).forEach(([mId, newRec]) => {
+      const mem = members.find((m) => m.id === mId);
+      if (!mem) return;
+      const oldRec = dbAttByS?.[sId]?.[mId];
+      const getStatusLabel = (rec) => {
+        if (!rec || !rec.p) return "Absent";
+        return rec.mode === "online" ? "Online" : "In-Person";
+      };
+      pendingChangesList.push({
+        id: `${sId}-${mId}`,
+        name: mem.name,
+        date: fmtDate(sess.date),
+        oldStatus: getStatusLabel(oldRec),
+        newStatus: getStatusLabel(newRec),
+      });
+    });
+  });
+
   if (members.length === 0) return <Empty text="Add members in the Admin tab to see the term matrix." />;
   if (sorted.length === 0) return <Empty text="No sessions logged yet. Start your first roll call from the Admin tab." />;
 
   return (
     <div>
-      {/* Legend */}
-      <div className="font-mono" style={{
-        display: "flex", flexWrap: "wrap", gap: "8px 16px",
-        marginBottom: 8, fontSize: 12, color: INK_MUTED,
+      {/* Legend and Actions container */}
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "12px",
+        marginBottom: 12,
       }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <Check size={13} style={{ color: FOREST }} /> In-person
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <Video size={13} style={{ color: TEAL }} /> Online
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <X size={11} style={{ color: LINE }} /> Absent
-        </span>
-        <span>· Not yet happened</span>
+        {/* Legend */}
+        <div className="font-mono" style={{
+          display: "flex", flexWrap: "wrap", gap: "8px 16px",
+          fontSize: 12, color: INK_MUTED,
+        }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <Check size={13} style={{ color: FOREST }} /> In-person
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <Video size={13} style={{ color: TEAL }} /> Online
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <X size={11} style={{ color: LINE }} /> Absent
+          </span>
+          <span>· Not yet happened</span>
+        </div>
+
+        {/* Action Buttons */}
+        {pendingCount > 0 && (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: "8px",
+            animation: "stampIn 0.25s ease-out",
+            background: "rgba(156,122,46,0.06)",
+            padding: "10px 14px",
+            borderRadius: "8px",
+            border: `1px dashed ${BRASS}44`,
+            minWidth: "280px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%", justifyContent: "space-between" }}>
+              <span className="font-mono" style={{ fontSize: 12, color: BRASS, fontWeight: 600 }}>
+                {pendingCount} unsaved change{pendingCount > 1 ? "s" : ""}
+              </span>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={savePendingAttendance}
+                  style={{
+                    background: FOREST,
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    boxShadow: "0 2px 6px rgba(63,107,82,0.2)",
+                  }}
+                >
+                  <Check size={13} /> Confirm
+                </button>
+                <button
+                  onClick={() => setPendingAtt({})}
+                  style={{
+                    background: "transparent",
+                    color: RUST,
+                    border: `1px solid ${RUST}44`,
+                    borderRadius: "6px",
+                    padding: "5px 11px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <X size={13} /> Discard
+                </button>
+              </div>
+            </div>
+
+            {/* List of changes */}
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+              width: "100%",
+              borderTop: `1px solid ${LINE}`,
+              paddingTop: "8px",
+              maxHeight: "150px",
+              overflowY: "auto",
+              alignItems: "flex-start",
+            }}>
+              {pendingChangesList.map((chg) => (
+                <div key={chg.id} style={{ fontSize: 11, color: INK, display: "flex", gap: "6px", alignItems: "center", width: "100%" }}>
+                  <strong style={{ color: TM_BLUE, whiteSpace: "nowrap" }}>{chg.name}</strong> 
+                  <span style={{ color: INK_MUTED, whiteSpace: "nowrap" }}>({chg.date}):</span>
+                  <span style={{ textDecoration: "line-through", color: RUST, opacity: 0.8, whiteSpace: "nowrap" }}>{chg.oldStatus}</span>
+                  <span style={{ color: INK_MUTED }}>➔</span>
+                  <span style={{ color: FOREST, fontWeight: 600, whiteSpace: "nowrap" }}>{chg.newStatus}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -934,12 +1197,63 @@ function Matrix({ members, sessions, attByS, stats }) {
                   {sorted.map((s) => {
                     const rec = attByS[s.id]?.[m.id];
                     const occurred = s.date <= todayStr();
+                    const isPending = pendingAtt[s.id]?.[m.id] !== undefined;
+
                     if (!isEligible(m, s.date))
                       return <td key={s.id} style={{ textAlign: "center", color: LINE }}>–</td>;
                     if (!occurred)
                       return <td key={s.id} style={{ textAlign: "center", color: LINE }}>·</td>;
+
+                    const handleDoubleClick = () => {
+                      let newPresent = true;
+                      let newMode = "in-person";
+                      if (!rec?.p) {
+                        newPresent = true;
+                        newMode = "in-person";
+                      } else if (rec.mode !== "online") {
+                        newPresent = true;
+                        newMode = "online";
+                      } else {
+                        newPresent = false;
+                        newMode = null;
+                      }
+
+                      const newRecord = {
+                        p: newPresent,
+                        t: new Date().toISOString(),
+                        m: "admin",
+                        mode: newPresent ? newMode : null
+                      };
+
+                      setPendingAtt((prev) => ({
+                        ...prev,
+                        [s.id]: { ...(prev[s.id] || {}), [m.id]: newRecord }
+                      }));
+                    };
+
                     return (
-                      <td key={s.id} style={{ textAlign: "center" }}>
+                      <td
+                        key={s.id}
+                        style={{
+                          textAlign: "center",
+                          cursor: "pointer",
+                          transition: "background-color 0.15s ease, outline 0.15s ease",
+                          backgroundColor: isPending ? "rgba(253, 187, 48, 0.12)" : "transparent",
+                          outline: isPending ? `1px dashed ${BRASS}` : "none",
+                        }}
+                        onDoubleClick={handleDoubleClick}
+                        title="Double-click to cycle status: Absent ➔ In-Person ➔ Online"
+                        onMouseEnter={(e) => {
+                          if (!isPending) {
+                            e.currentTarget.style.backgroundColor = "rgba(0,65,101,0.08)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isPending) {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                          }
+                        }}
+                      >
                         {rec?.p
                           ? rec.mode === "online"
                             ? <Video size={13} style={{ color: TEAL, display: "inline" }} />
