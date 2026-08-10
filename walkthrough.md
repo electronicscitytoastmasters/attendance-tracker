@@ -1,69 +1,43 @@
-# Walkthrough — Attendance Tracker Build
+# Codebase Refactoring & Optimization Walkthrough
 
-## What Was Built
-
-A complete, production-ready, beautiful attendance tracker for the Electronics City Toastmasters Club. It supports both local Excel file storage and a shared multi-tab Google Sheets backend, featuring a secure routing structure:
-
-- **Base URL** (e.g. `https://yourname.github.io/attendance/`) -> Shows only the **Member Check-in** page. It is safe to share with all members.
-- **Admin Path** (e.g. `https://yourname.github.io/attendance/#admin`) -> Directs to a **PIN-protected Admin Panel** for the club secretary.
+## Summary of Accomplishments
+Added **Sort By** and **Filter By** options to the Club Roster tab in [MemberManagement.jsx](file:///d:/Toastmasters/Ecity/Tools/MemberAttendence/src/components/MemberManagement.jsx), making **Name (A – Z)** the default sorting behavior.
 
 ---
 
-## Files Created & Updated
+## Club Roster Sorting & Filtering Features
+- **Default Sort:** Alphabetical **Name (A – Z)** (Exec Committee is no longer forced to top by default).
+- **Sort Options:**
+  - `Sort: Name (A – Z)` [DEFAULT]
+  - `Sort: Name (Z – A)`
+  - `Sort: Exec Committee First (★)`
+  - `Sort: Newest Joined First`
+  - `Sort: Oldest Joined First`
+- **Filter Options:**
+  - `Filter: All Members`
+  - `Filter: Active Members Only`
+  - `Filter: Exec Committee Only (★)`
+  - `Filter: General Members Only`
+  - `Filter: Inactive / Left Members`
 
+---
+
+## Verification Results
+
+### Production Build Test (`npm run build`)
+```text
+vite v8.2.1 building client environment for production...
+transforming...✓ 2354 modules transformed.
+rendering chunks...
+dist/index.html                                   0.82 kB
+dist/assets/ToastmastersLogoColor-Bq9QlzTG.png  222.59 kB
+dist/assets/index-Bnx8-8m1.css                    2.25 kB
+dist/assets/purify.es-JEAr64Sr.js                27.12 kB
+dist/assets/index.es-DvUZ6oDs.js                151.43 kB
+dist/assets/html2canvas-Dbbl_RJG.js             199.49 kB
+dist/assets/jspdf.es.min-BktfabUR.js            399.93 kB
+dist/assets/xlsx-BHKh7vjA.js                    424.11 kB
+dist/assets/index-B7WoNXx4.js                   664.43 kB
+
+✓ built in 865ms
 ```
-d:\Toastmasters\Ecity\Tools\MemberAttendence\
-├── package.json              — Node project + dependencies + deploy script
-├── vite.config.js            — Vite + GitHub Pages base path
-├── index.html                — HTML entry point with Google Fonts & Lucide icons
-├── .gitignore                — Excludes node_modules and build outputs
-├── README.md                 — Quick start commands
-├── SETUP.md                  — Complete step-by-step setup guide
-├── src/
-│   ├── main.jsx              — React router (routes based on window.location.hash)
-│   ├── index.css             — Global CSS reset
-│   ├── config.js             — Configuration file storing the ADMIN_PIN
-│   ├── idb.js                — IndexedDB helper (persists local file handle across reloads)
-│   ├── storage.js            — Multi-tab storage adapter (local ↔ Excel file ↔ Google Sheets)
-│   ├── App.jsx               — Renders full Admin control panel & analytics dashboard
-│   ├── FileSetup.jsx         — First-run UI for creating/connecting the local Excel file
-│   └── CheckinPage.jsx       — Clean, user-friendly check-in UI for members
-└── google-apps-script/
-    └── Code.gs               — Multi-tab Apps Script backend (paste into Apps Script editor)
-```
-
----
-
-## Technical & Architecture Highlights
-
-### 1. Multi-Tab Human-Readable Layout
-Instead of serializing raw JSON blobs, both the local Excel file and the Google Sheets backend share the exact same 5-tab, human-readable spreadsheet layout:
-- **`Config`**: Stores term parameters and active session IDs.
-- **`Members`**: Club member roster with join/leave dates and system IDs.
-- **`Sessions`**: Pre-calculated Saturday session dates.
-- **`Attendance`**: Row-by-row logs of check-ins containing session dates, names, present flags, online/in-person status, and timestamps.
-- **`Archive_Index`**: Catalog of past completed terms.
-- **`Arch_*`**: Archive tables generated when a term is archived.
-
-### 2. User-Gesture File Persistence (`src/idb.js`)
-Chrome/Edge require explicit permission to access files on every session.
-- The app stores the chosen `FileSystemFileHandle` inside IndexedDB.
-- On refresh, if the browser denies silent re-connection, the member check-in page shows a **Reconnect file** button.
-- Clicking the button runs the permission dialog in a user-gesture context, restoring live-sync within one click.
-
-### 3. Secure Hash-Routing Reversal
-- Any random navigation or URL correction default-routes to the safe **Check-in** screen.
-- Navigating to `#admin` prompts for the club PIN (configured in `src/config.js`), storing the authenticated token in `sessionStorage` (which expires when the browser tab is closed).
-
----
-
-## Deployment & Setup Guide
-
-| Step | Action | Estimated Time |
-|---|---|---|
-| 1 | Open [src/config.js](file:///d:/Toastmasters/Ecity/Tools/MemberAttendence/src/config.js) and change `ADMIN_PIN` | 1 min |
-| 2 | Open [src/storage.js](file:///d:/Toastmasters/Ecity/Tools/MemberAttendence/src/storage.js) and switch `MODE = "sheets"` | 1 min |
-| 3 | Follow Setup Steps 4–5 in [SETUP.md](file:///d:/Toastmasters/Ecity/Tools/MemberAttendence/SETUP.md) for Google Sheets backend | 10 min |
-| 4 | Deploy Apps Script as Web App & copy the URL | 5 min |
-| 5 | Paste URL in `SHEETS_URL` in [src/storage.js](file:///d:/Toastmasters/Ecity/Tools/MemberAttendence/src/storage.js) | 1 min |
-| 6 | Push code to private GitHub repository & run `npm run deploy` | 5 min |

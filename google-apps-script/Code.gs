@@ -53,12 +53,17 @@ function ensureHeader(sheet, header) {
   }
 }
 
+const _readRowsCache = {};
+
 /** Read all data rows as array of plain objects */
 function readRows(sheetName) {
+  if (_readRowsCache[sheetName]) {
+    return _readRowsCache[sheetName];
+  }
   const sheet = ss().getSheetByName(sheetName);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const [header, ...rows] = sheet.getDataRange().getValues();
-  return rows
+  const data = rows
     .filter(r => r.some(c => c !== ""))  // skip completely empty rows
     .map(r => Object.fromEntries(header.map((h, i) => {
       let val = r[i];
@@ -75,10 +80,13 @@ function readRows(sheetName) {
       }
       return [h, String(val ?? "").trim()];
     })));
+  _readRowsCache[sheetName] = data;
+  return data;
 }
 
 /** Overwrite a tab: clear content, write header + rows */
 function writeRows(sheetName, header, rows, skipResize) {
+  delete _readRowsCache[sheetName];
   const sheet = getOrCreate(sheetName);
   sheet.clearContents();
   const all = [header, ...rows.map(r => header.map(h => r[h] ?? ""))];
@@ -99,6 +107,7 @@ function cfgGet(key) {
 }
 
 function cfgSet(updates) {
+  delete _readRowsCache[TABS.CONFIG];
   const sheet = getOrCreate(TABS.CONFIG);
   ensureHeader(sheet, HEADERS[TABS.CONFIG]);
   // Build lookup of existing key → row number (1-indexed, +1 for header)

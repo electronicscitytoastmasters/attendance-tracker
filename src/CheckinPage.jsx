@@ -19,35 +19,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Check, Video, MapPin, Search, RefreshCw } from "lucide-react";
 import { getJSON, setJSON, initStorage, hasStoredFile, reconnectFile, pickFile, MODE } from "./storage.js";
+import { COLORS } from "./constants/theme.js";
+import { fmtDate, fmtTimeIST, isEligible, todayStr } from "./utils/dateUtils.js";
 
-// ─── Design tokens (same as App.jsx) ─────────────────────────────────────────
-const INK       = "#1B2430";
-const INK_MUTED = "#5B6472";
-const PAPER     = "#EFEDE3";
-const PAPER_RAISED = "#F7F5EC";
-const BRASS     = "#9C7A2E";
-const FOREST    = "#3F6B52";
-const TEAL      = "#2E6E8E";
-const LINE      = "#D9D2C0";
+const { INK, INK_MUTED, PAPER, PAPER_RAISED, BRASS, FOREST, TEAL, LINE } = COLORS;
 
-// ─── IST helpers (duplicated from App.jsx to keep this file self-contained) ───
-const IST_MS = 5.5 * 60 * 60 * 1000;
-function nowIST() { return new Date(Date.now() + IST_MS); }
-function _pad(n) { return String(n).padStart(2, "0"); }
-function toDateStr(d) { return `${d.getUTCFullYear()}-${_pad(d.getUTCMonth() + 1)}-${_pad(d.getUTCDate())}`; }
-const todayStr = () => toDateStr(nowIST());
-const fmtDate  = (d) => new Date(d + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
-function fmtTimeIST(iso) {
-  if (!iso) return "";
-  const d = new Date(new Date(iso).getTime() + IST_MS);
-  const h = d.getUTCHours();
-  return `${h % 12 || 12}:${_pad(d.getUTCMinutes())} ${h >= 12 ? "PM" : "AM"} IST`;
-}
-function isEligible(member, dateStr) {
-  const join  = member.joinDate || "2000-01-01";
-  const leave = member.leaveDate || null;
-  return dateStr >= join && (!leave || dateStr <= leave);
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CheckinPage() {
@@ -66,14 +42,10 @@ export default function CheckinPage() {
     setActualError(null);
     setShowErrorDetails(false);
     try {
-      const [membersData, sessionsData, activeId] = await Promise.all([
-        getJSON("members"),
-        getJSON("sessions"),
-        getJSON("activeSessionId"),
-      ]);
-
-      const m    = membersData  || [];
-      const s    = sessionsData || [];
+      const allData = await getJSON("all");
+      const m    = allData?.members || [];
+      const s    = allData?.sessions || [];
+      const activeId = allData?.activeSessionId || null;
       const sess = activeId ? s.find((x) => x.id === activeId) : null;
 
       setMembers(m);
