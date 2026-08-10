@@ -515,9 +515,23 @@ function _localSet(key, value) {
 //   local optimistic cache.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _sheetsCache = {};
+let _lastWriteTime = 0;
+const WRITE_COOLDOWN_MS = 10000; // 10 seconds
 
 async function _sheetsGet(key) {
+  // If a local write occurred very recently, rely on our local cache for key state keys
+  const now = Date.now();
+  const withinCooldown = (now - _lastWriteTime) < WRITE_COOLDOWN_MS;
+
+  if (withinCooldown && _sheetsCache[key] !== undefined) {
+    return _sheetsCache[key];
+  }
+
+  // Clear cache if we are outside cooldown to perform actual remote reads
+  if (!withinCooldown) {
+    delete _sheetsCache[key];
+  }
+
   if (_sheetsCache[key] !== undefined) return _sheetsCache[key];
   try {
     const params = _getParams(key);
@@ -541,8 +555,8 @@ async function _sheetsGet(key) {
 }
 
 async function _sheetsSet(key, value) {
+  _lastWriteTime = Date.now();
   // Optimistic local update — POST is fire-and-forget (no-cors)
-  delete _sheetsCache[key];
   _sheetsCache[key] = value;
   if (key === "members") _cache.members = value;
   if (key === "sessions") _cache.sessions = value;

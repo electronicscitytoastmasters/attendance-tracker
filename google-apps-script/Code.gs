@@ -78,7 +78,7 @@ function readRows(sheetName) {
 }
 
 /** Overwrite a tab: clear content, write header + rows */
-function writeRows(sheetName, header, rows) {
+function writeRows(sheetName, header, rows, skipResize) {
   const sheet = getOrCreate(sheetName);
   sheet.clearContents();
   const all = [header, ...rows.map(r => header.map(h => r[h] ?? ""))];
@@ -87,7 +87,9 @@ function writeRows(sheetName, header, rows) {
     .setFontWeight("bold")
     .setBackground("#F7F5EC");
   sheet.setFrozenRows(1);
-  header.forEach((_, i) => sheet.autoResizeColumn(i + 1));
+  if (!skipResize) {
+    header.forEach((_, i) => sheet.autoResizeColumn(i + 1));
+  }
 }
 
 // ─── Config helpers ───────────────────────────────────────────────────────────
@@ -322,7 +324,7 @@ function doPost(e) {
       });
 
       const mergedRows = Object.keys(existingMap).map(k => existingMap[k]);
-      writeRows(TABS.ATTEND, HEADERS[TABS.ATTEND], [...others, ...mergedRows]);
+      writeRows(TABS.ATTEND, HEADERS[TABS.ATTEND], [...others, ...mergedRows], true);
 
     } else if (key === "archiveIndex") {
       const today = Utilities.formatDate(new Date(), "IST", "yyyy-MM-dd");
