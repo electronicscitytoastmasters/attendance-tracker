@@ -542,62 +542,63 @@ export default function AttendanceTracker() {
     <div className="font-body" style={{ background: PAPER, color: INK, minHeight: "100svh" }}>
       <FontStyle />
 
-      {/* ── Header ── */}
-      <header style={{ padding: "24px 20px 12px", borderBottom: `1px solid ${TM_BLUE}22`, background: `linear-gradient(180deg, ${PAPER} 0%, ${PAPER_RAISED} 100%)` }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div>
-            <p className="font-mono" style={{
-              fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: TM_BLUE,
-            }}>
-              Toastmasters Club Dashboard
-            </p>
-            <h1 className="font-display" style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em" }}>
-              Electronics City Toastmasters
-            </h1>
-            <p style={{ fontSize: 12, marginTop: 2, color: INK_MUTED }}>
-              Term: {term.label} · Meets Saturdays
-            </p>
+      {/* ── Header (title + primary nav consolidated) ── */}
+      <header style={{ padding: "16px 20px", borderBottom: `1px solid ${TM_BLUE}22`, background: `linear-gradient(180deg, ${PAPER} 0%, ${PAPER_RAISED} 100%)` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 8, background: TM_BLUE, display: "flex", alignItems: "center", justifyContent: "center", color: PAPER, fontWeight: 700 }}>
+              ET
+            </div>
+            <div>
+              <p className="font-mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: TM_BLUE, margin: 0 }}>
+                Toastmasters Club Dashboard
+              </p>
+              <h1 className="font-display" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.15, margin: 0 }}>
+                Electronics City Toastmasters
+              </h1>
+            </div>
           </div>
-          <div className="font-mono" style={{ fontSize: 12, color: INK_MUTED, textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
-            <div>{members.length} members</div>
-            <div>{sessions.length} sessions</div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="font-mono" style={{ fontSize: 12, color: INK_MUTED, textAlign: "right", marginRight: 8 }}>
+              <div>{members.length} members</div>
+              <div>{sessions.length} sessions</div>
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", overflowX: "auto" }}>
+              {[
+                { id: "checkin",   label: "Check-In" },
+                { id: "dashboard", label: "Dashboard" },
+                { id: "monthly",   label: "Reports" },
+                { id: "matrix",    label: "Matrix" },
+                { id: "admin",     label: "Admin" },
+              ].map(({ id, label }) => (
+                <button
+                  key={id}
+                  id={`tab-${id}`}
+                  className="app-nav-btn"
+                  onClick={() => setTab(id)}
+                  style={{
+                    padding: "8px 12px", fontSize: 14, fontWeight: 600,
+                    whiteSpace: "nowrap", color: tab === id ? TM_BLUE : INK_MUTED,
+                    borderBottom: tab === id ? `3px solid ${TM_BLUE}` : "3px solid transparent",
+                    background: "none", cursor: "pointer", borderRadius: 6,
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* ── Nav ── */}
-      <nav style={{
-        display: "flex", padding: "0 8px",
-        borderBottom: `1px solid ${TM_BLUE}22`, background: "rgba(0,65,101,0.06)",
-        overflowX: "auto",
-      }}>
-        {[
-          { id: "checkin",   label: "Check-In",    Icon: UserCheck },
-          { id: "dashboard", label: "Dashboard",   Icon: TrendingUp },
-          { id: "monthly",   label: "Monthly Report", Icon: BarChart3 },
-          { id: "matrix",    label: "Term Matrix", Icon: CalendarDays },
-          { id: "admin",     label: "Admin",       Icon: AlertCircle },
-        ].map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            id={`tab-${id}`}
-            className="app-nav-btn"
-            onClick={() => setTab(id)}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "12px 16px", fontSize: 14, fontWeight: 600,
-              whiteSpace: "nowrap", color: tab === id ? TM_BLUE : INK_MUTED,
-              borderBottom: tab === id ? `3px solid ${TM_BLUE}` : "3px solid transparent",
-              background: "none", cursor: "pointer",
-            }}
-          >
-            <Icon size={15} /> {label}
-          </button>
-        ))}
-      </nav>
-
       {/* ── Main ── */}
-      <main style={{ padding: 20, maxWidth: 800, margin: "0 auto" }}>
+      <main style={{
+        padding: 20,
+        maxWidth: tab === "monthly" ? 1440 : (tab === "matrix" || tab === "admin" || tab === "dashboard") ? 1200 : 800,
+        margin: "0 auto",
+        transition: "max-width 0.2s ease"
+      }}>
         {tab === "checkin" && (
           <CheckIn
             members={members}
