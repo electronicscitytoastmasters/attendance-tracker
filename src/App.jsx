@@ -2,13 +2,15 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   Check, X, QrCode, Users, TrendingUp, Download, Plus, Search,
-  UserCheck, Calendar, Settings2, Trash2, ChevronRight, Star, Video, MapPin
+  UserCheck, Calendar, Settings2, Trash2, ChevronRight, Star, Video, MapPin,
+  BarChart3, CalendarDays, AlertCircle,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from "recharts";
 import { getJSON, setJSON, initStorage, getFileName, MODE } from "./storage.js";
 import FileSetup from "./FileSetup.jsx";
+import MonthlyReport from "./MonthlyReport.jsx";
 
 // ─── Design tokens ───────────────────────────────────────────────────────────
 const INK = "#1B2430";
@@ -20,6 +22,9 @@ const RUST = "#9C4A32";
 const FOREST = "#3F6B52";
 const TEAL = "#2E6E8E";
 const LINE = "#D9D2C0";
+const TM_BLUE = "#004165";
+const TM_RED = "#C8102E";
+const TM_GOLD = "#FDBB30";
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -189,6 +194,17 @@ function downloadWorkbook(membersList, sessionsList, attMap, filenameLabel) {
 const FontStyle = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+    body {
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+      color: ${INK};
+      background: ${PAPER};
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    button, input, textarea, select {
+      transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    }
     .font-display { font-family: 'Fraunces', serif; }
     .font-body    { font-family: 'Inter', sans-serif; }
     .font-mono    { font-family: 'IBM Plex Mono', monospace; }
@@ -198,7 +214,27 @@ const FontStyle = () => (
       100% { opacity: 1; transform: scale(1) rotate(-7deg); }
     }
     .stamp-anim { animation: stampIn 0.5s cubic-bezier(.2,.9,.3,1.1); }
-    .tab-active  { border-bottom: 3px solid ${BRASS}; }
+    .app-card {
+      transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    }
+    .app-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 40px rgba(27,36,48,0.12);
+      border-color: rgba(0,65,101,0.16);
+    }
+    .app-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(27,36,48,0.12);
+    }
+    .app-button:focus-visible {
+      outline: 3px solid rgba(200,16,46,0.24);
+      outline-offset: 2px;
+    }
+    .app-nav-btn { transition: color 0.2s ease, border-color 0.2s ease; }
+    .app-nav-btn:hover { color: ${TM_BLUE}; }
+    .app-tag { transition: transform 0.2s ease, background 0.2s ease; }
+    .app-tag:hover { transform: translateY(-1px); background: rgba(220,205,130,0.16); }
+    .tab-active  { border-bottom: 3px solid ${TM_BLUE}; }
     ::-webkit-scrollbar       { height: 8px; width: 8px; }
     ::-webkit-scrollbar-thumb { background: ${LINE}; border-radius: 4px; }
   `}</style>
@@ -214,12 +250,16 @@ export default function AttendanceTracker() {
   const [attByS, setAttByS] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [actualError, setActualError] = useState(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [needsFileSetup, setNeedsFileSetup] = useState(false);
 
   const loadAll = useCallback(async (isSilent = false) => {
     if (!isSilent) {
       setLoading(true);
       setLoadError(false);
+      setActualError(null);
+      setShowErrorDetails(false);
     }
     const withTimeout = (p, ms = 15000) =>
       Promise.race([
@@ -228,61 +268,82 @@ export default function AttendanceTracker() {
       ]);
 
     try {
-      const [m, s, a, t] = await withTimeout(
-        Promise.all([
-          getJSON("members"),
-          getJSON("sessions"),
-          getJSON("activeSessionId"),
-          getJSON("term"),
-        ]),
-      );
-
-      const membersArr = m || [];
-      let termObj = t;
-      if (!termObj) {
-        termObj = termForDate(todayStr());
-        await setJSON("term", termObj);
+      let bulkData = null;
+      try {
+        bulkData = await withTimeout(getJSON("all"), 15000);
+      } catch (err) {
+        console.warn("Bulk load failed or not supported, falling back...", err);
       }
 
-      let sessionsArr = s;
-      if (!sessionsArr || sessionsArr.length === 0) {
-        sessionsArr = allSaturdaysInRange(termObj.start, termObj.end).map(
-          (date) => ({ id: uid(), date, label: `Saturday, ${fmtDate(date)}` }),
-        );
-        await setJSON("sessions", sessionsArr);
+      let membersArr, sessionsArr, activeId, termObj, attMap;
+
+      if (bulkData && bulkData.members && bulkData.sessions) {
+        membersArr = bulkData.members;
+        sessionsArr = bulkData.sessions;
+        activeId = bulkData.activeSessionId || "";
+        termObj = bulkData.term;
+        attMap = bulkData.attendance || {};
       } else {
-        // One-time repair: earlier versions stored dates via toISOString(), which
-        // can shift the date back a day. Only nudge Fridays to Saturday.
-        let changed = false;
-        sessionsArr = sessionsArr.map((sess) => {
-          const d = ymdToDate(sess.date);
-          const dow = d.getUTCDay();
-          if (dow !== 5) return sess;
-          changed = true;
-          d.setUTCDate(d.getUTCDate() + 1);
-          const fixedDate = toLocalDateStr(d);
-          return { ...sess, date: fixedDate, label: `Saturday, ${fmtDate(fixedDate)}` };
-        });
-        if (changed) await setJSON("sessions", sessionsArr);
+        const [m, s, a, t] = await withTimeout(
+          Promise.all([
+            getJSON("members"),
+            getJSON("sessions"),
+            getJSON("activeSessionId"),
+            getJSON("term"),
+          ]),
+        );
+
+        membersArr = m || [];
+        activeId = a || "";
+        termObj = t;
+
+        if (!termObj) {
+          termObj = termForDate(todayStr());
+          await setJSON("term", termObj);
+        }
+
+        sessionsArr = s;
+        if (!sessionsArr || sessionsArr.length === 0) {
+          sessionsArr = allSaturdaysInRange(termObj.start, termObj.end).map(
+            (date) => ({ id: uid(), date, label: `Saturday, ${fmtDate(date)}` }),
+          );
+          await setJSON("sessions", sessionsArr);
+        } else {
+          // One-time repair: earlier versions stored dates via toISOString(), which
+          // can shift the date back a day. Only nudge Fridays to Saturday.
+          let changed = false;
+          sessionsArr = sessionsArr.map((sess) => {
+            const d = ymdToDate(sess.date);
+            const dow = d.getUTCDay();
+            if (dow !== 5) return sess;
+            changed = true;
+            d.setUTCDate(d.getUTCDate() + 1);
+            const fixedDate = toLocalDateStr(d);
+            return { ...sess, date: fixedDate, label: `Saturday, ${fmtDate(fixedDate)}` };
+          });
+          if (changed) await setJSON("sessions", sessionsArr);
+        }
+
+        const attEntries = await withTimeout(
+          Promise.all(
+            sessionsArr.map(async (sess) => [
+              sess.id,
+              (await getJSON(`att:${sess.id}`)) || {},
+            ]),
+          ),
+        );
+        attMap = Object.fromEntries(attEntries);
       }
 
       setMembers(membersArr);
       setSessions(sessionsArr);
-      setTerm(termObj);
-      setActiveSessionId(a || "");
-
-      const attEntries = await withTimeout(
-        Promise.all(
-          sessionsArr.map(async (sess) => [
-            sess.id,
-            (await getJSON(`att:${sess.id}`)) || {},
-          ]),
-        ),
-      );
-      setAttByS(Object.fromEntries(attEntries));
+      setTerm(termObj || termForDate(todayStr()));
+      setActiveSessionId(activeId);
+      setAttByS(attMap);
     } catch (e) {
       console.error("loadAll failed", e);
       if (!isSilent) {
+        setActualError(e);
         setLoadError(true);
       }
     } finally {
@@ -424,17 +485,55 @@ export default function AttendanceTracker() {
         minHeight: "100svh", display: "flex", flexDirection: "column",
         alignItems: "center", justifyContent: "center", gap: 12,
         background: PAPER, color: INK, padding: "0 24px", textAlign: "center",
+        maxWidth: 480, margin: "0 auto",
       }}>
-        <p className="font-display" style={{ fontSize: 18 }}>Couldn't load the roster</p>
-        <p style={{ fontSize: 14, color: INK_MUTED }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>📡</div>
+        <p className="font-display" style={{ fontSize: 20, fontWeight: 600 }}>Couldn't load the roster</p>
+        <p style={{ fontSize: 14, color: INK_MUTED, lineHeight: 1.5 }}>
           This is usually a temporary connection hiccup — your data is safe.
         </p>
-        <button onClick={loadAll} style={{
-          fontSize: 14, padding: "8px 16px", borderRadius: 6,
-          fontWeight: 500, marginTop: 8, background: INK, color: PAPER,
-        }}>
-          Try again
-        </button>
+        
+        <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+          <button className="app-button" onClick={() => loadAll(false)} style={{
+            fontSize: 14, padding: "10px 18px", borderRadius: 8,
+            fontWeight: 600, background: TM_BLUE, color: PAPER, cursor: "pointer",
+            border: "none", boxShadow: "0 10px 24px rgba(0,65,101,0.14)",
+          }}>
+            Try again
+          </button>
+          
+          {actualError && (
+            <button className="app-button" onClick={() => setShowErrorDetails(prev => !prev)} style={{
+              fontSize: 14, padding: "10px 18px", borderRadius: 8,
+              fontWeight: 600, background: "white", color: TM_BLUE, cursor: "pointer",
+              border: `1px solid ${TM_BLUE}33`,
+            }}>
+              {showErrorDetails ? "Hide details" : "Show details"}
+            </button>
+          )}
+        </div>
+
+        {showErrorDetails && actualError && (
+          <div style={{
+            marginTop: 16, padding: 12, borderRadius: 6,
+            background: "#F7F5EC", border: `1px solid ${LINE}`,
+            textAlign: "left", width: "100%", boxSizing: "border-box",
+            overflowX: "auto",
+          }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: RUST, marginBottom: 4 }}>
+              Error: {actualError.message || String(actualError)}
+            </p>
+            {actualError.stack && (
+              <pre style={{
+                fontSize: 11, color: INK_MUTED, margin: 0,
+                fontFamily: "IBM Plex Mono, monospace", whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+              }}>
+                {actualError.stack}
+              </pre>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -444,16 +543,16 @@ export default function AttendanceTracker() {
       <FontStyle />
 
       {/* ── Header ── */}
-      <header style={{ padding: "24px 20px 12px", borderBottom: `1px solid ${LINE}` }}>
+      <header style={{ padding: "24px 20px 12px", borderBottom: `1px solid ${TM_BLUE}22`, background: `linear-gradient(180deg, ${PAPER} 0%, ${PAPER_RAISED} 100%)` }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
             <p className="font-mono" style={{
-              fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: BRASS,
+              fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: TM_BLUE,
             }}>
-              Weekly Attendance Tracker
+              Toastmasters Club Dashboard
             </p>
-            <h1 className="font-display" style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2 }}>
-              Electronics City Toastmasters Club
+            <h1 className="font-display" style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em" }}>
+              Electronics City Toastmasters
             </h1>
             <p style={{ fontSize: 12, marginTop: 2, color: INK_MUTED }}>
               Term: {term.label} · Meets Saturdays
@@ -469,25 +568,27 @@ export default function AttendanceTracker() {
       {/* ── Nav ── */}
       <nav style={{
         display: "flex", padding: "0 8px",
-        borderBottom: `1px solid ${LINE}`, background: PAPER_RAISED,
+        borderBottom: `1px solid ${TM_BLUE}22`, background: "rgba(0,65,101,0.06)",
         overflowX: "auto",
       }}>
         {[
           { id: "checkin",   label: "Check-In",    Icon: UserCheck },
           { id: "dashboard", label: "Dashboard",   Icon: TrendingUp },
-          { id: "matrix",    label: "Term Matrix", Icon: Calendar },
-          { id: "admin",     label: "Admin",       Icon: Settings2 },
+          { id: "monthly",   label: "Monthly Report", Icon: BarChart3 },
+          { id: "matrix",    label: "Term Matrix", Icon: CalendarDays },
+          { id: "admin",     label: "Admin",       Icon: AlertCircle },
         ].map(({ id, label, Icon }) => (
           <button
             key={id}
             id={`tab-${id}`}
+            className="app-nav-btn"
             onClick={() => setTab(id)}
             style={{
               display: "flex", alignItems: "center", gap: 6,
-              padding: "12px 16px", fontSize: 14, fontWeight: 500,
-              whiteSpace: "nowrap", color: tab === id ? INK : INK_MUTED,
-              borderBottom: tab === id ? `3px solid ${BRASS}` : "3px solid transparent",
-              background: "none",
+              padding: "12px 16px", fontSize: 14, fontWeight: 600,
+              whiteSpace: "nowrap", color: tab === id ? TM_BLUE : INK_MUTED,
+              borderBottom: tab === id ? `3px solid ${TM_BLUE}` : "3px solid transparent",
+              background: "none", cursor: "pointer",
             }}
           >
             <Icon size={15} /> {label}
@@ -496,7 +597,7 @@ export default function AttendanceTracker() {
       </nav>
 
       {/* ── Main ── */}
-      <main style={{ padding: 20, maxWidth: 720, margin: "0 auto" }}>
+      <main style={{ padding: 20, maxWidth: 800, margin: "0 auto" }}>
         {tab === "checkin" && (
           <CheckIn
             members={members}
@@ -512,6 +613,12 @@ export default function AttendanceTracker() {
             members={members} stats={stats}
             activeSession={activeSession} activeAtt={activeAtt}
             sessions={sessions} attByS={attByS}
+          />
+        )}
+        {tab === "monthly" && (
+          <MonthlyReport
+            members={members} sessions={sessions} attByS={attByS}
+            stats={stats} term={term}
           />
         )}
         {tab === "matrix" && (

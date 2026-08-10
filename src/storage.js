@@ -335,6 +335,32 @@ async function _excelGet(key) {
     return result;
   }
 
+  if (key === "all") {
+    const members = await _excelGet("members") || [];
+    const sessions = await _excelGet("sessions") || [];
+    const activeSessionId = await _excelGet("activeSessionId") || "";
+    const term = await _excelGet("term");
+    const attendance = {};
+    sessions.forEach((sess) => {
+      attendance[sess.id] = {};
+    });
+    _rows(TAB.ATTEND).forEach((r) => {
+      const sid = r._session_id;
+      if (!attendance[sid]) {
+        attendance[sid] = {};
+      }
+      attendance[sid][r._member_id] = {
+        p: r.present === "Yes",
+        t: r._timestamp_utc || null,
+        m: "self",
+        mode: r.mode === "Online" ? "online"
+          : r.mode === "In-Person" ? "in-person"
+            : null,
+      };
+    });
+    return { members, sessions, activeSessionId, term, attendance };
+  }
+
   if (key === "archiveIndex") {
     return _rows(TAB.ARCH_IDX).map((r) => ({
       label: r.term_label, start: r.term_start, end: r.term_end,
@@ -487,6 +513,17 @@ function _readArchiveTab(tabName) {
 
 function _localGet(key) {
   try {
+    if (key === "all") {
+      const members = _localGet("members") || [];
+      const sessions = _localGet("sessions") || [];
+      const activeSessionId = _localGet("activeSessionId") || "";
+      const term = _localGet("term");
+      const attendance = {};
+      sessions.forEach(sess => {
+        attendance[sess.id] = _localGet(`att:${sess.id}`) || {};
+      });
+      return { members, sessions, activeSessionId, term, attendance };
+    }
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
@@ -530,6 +567,25 @@ async function _sheetsGet(key) {
       return null;
     }
     const data = json.data;
+    if (key === "all") {
+      if (!data || !data.members) {
+        console.warn("sheetsGet key 'all' returned invalid/old Apps Script structure:", data);
+        return null;
+      }
+      _cache.members = data.members;
+      _sheetsCache["members"] = data.members;
+      _cache.sessions = data.sessions;
+      _sheetsCache["sessions"] = data.sessions;
+      _sheetsCache["activeSessionId"] = data.activeSessionId ?? "";
+      _sheetsCache["term"] = data.term ?? null;
+      if (data.attendance) {
+        Object.entries(data.attendance).forEach(([sid, att]) => {
+          _sheetsCache[`att:${sid}`] = att;
+        });
+      }
+      _sheetsCache["all"] = data;
+      return data;
+    }
     if (key === "members") _cache.members = data;
     if (key === "sessions") _cache.sessions = data;
     _sheetsCache[key] = data ?? null;
@@ -565,7 +621,7 @@ async function _sheetsSet(key, value) {
 
 function _getParams(key) {
   if (key === "members" || key === "sessions" || key === "term" ||
-    key === "activeSessionId" || key === "archiveIndex")
+    key === "activeSessionId" || key === "archiveIndex" || key === "all")
     return { action: "get", key };
   if (key.startsWith("att:"))
     return { action: "get", key: "att", session_id: key.slice(4) };

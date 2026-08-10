@@ -197,7 +197,38 @@ function doGet(e) {
 
     let data = null;
 
-    if (key === "members") {
+    if (key === "all") {
+      const members = readRows(TABS.MEMBERS).map(r => ({
+        id: r._id, name: r.name, ec: r.is_ec === "Yes",
+        joinDate: r.join_date || null, leaveDate: r.leave_date || null,
+      }));
+      const sessions = readRows(TABS.SESSIONS).map(r => ({
+        id: r._id, date: r.date, label: r.label,
+      }));
+      const activeSessionId = cfgGet("active_session_id") || "";
+      const s = cfgGet("term_start"), en = cfgGet("term_end"), l = cfgGet("term_label");
+      const term = s ? { start: s, end: en, label: l } : null;
+
+      const attendance = {};
+      sessions.forEach(sess => {
+        attendance[sess.id] = {};
+      });
+      readRows(TABS.ATTEND).forEach(r => {
+        const sid = r._session_id;
+        if (!attendance[sid]) {
+          attendance[sid] = {};
+        }
+        attendance[sid][r._member_id] = {
+          p:    r.present === "Yes",
+          t:    r._timestamp_utc || null,
+          m:    "self",
+          mode: r.mode === "Online" ? "online" : r.mode === "In-Person" ? "in-person" : null,
+        };
+      });
+
+      data = { members, sessions, activeSessionId, term, attendance };
+
+    } else if (key === "members") {
       data = readRows(TABS.MEMBERS).map(r => ({
         id: r._id, name: r.name, ec: r.is_ec === "Yes",
         joinDate: r.join_date || null, leaveDate: r.leave_date || null,
