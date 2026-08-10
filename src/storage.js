@@ -319,9 +319,10 @@ async function _excelGet(key) {
 
   if (key.startsWith("att:")) {
     const sid = key.slice(4);
+    const sess = (_cache.sessions || []).find((s) => s.id === sid || s.date === sid);
     const result = {};
     _rows(TAB.ATTEND)
-      .filter((r) => r._session_id === sid)
+      .filter((r) => r._session_id === sid || (sess && r.session_date === sess.date))
       .forEach((r) => {
         result[r._member_id] = {
           p: r.present === "Yes",
@@ -340,12 +341,20 @@ async function _excelGet(key) {
     const sessions = await _excelGet("sessions") || [];
     const activeSessionId = await _excelGet("activeSessionId") || "";
     const term = await _excelGet("term");
+    const dateToSessionId = {};
+    sessions.forEach((sess) => {
+      dateToSessionId[sess.date] = sess.id;
+    });
     const attendance = {};
     sessions.forEach((sess) => {
       attendance[sess.id] = {};
     });
     _rows(TAB.ATTEND).forEach((r) => {
-      const sid = r._session_id;
+      let sid = r._session_id;
+      if (!attendance[sid] && r.session_date && dateToSessionId[r.session_date]) {
+        sid = dateToSessionId[r.session_date];
+      }
+      if (!sid) return;
       if (!attendance[sid]) {
         attendance[sid] = {};
       }

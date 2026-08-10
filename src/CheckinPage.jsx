@@ -154,7 +154,32 @@ export default function CheckinPage() {
   // ── Screens ──────────────────────────────────────────────────────────────
   if (status === "loading") return (
     <Centered>
-      <p style={{ color: INK_MUTED, fontFamily: "Inter, sans-serif" }}>Loading…</p>
+      <div style={{ textAlign: "center" }}>
+        {/* We can reuse the spinner style from App.jsx or inline a CSS style tag */}
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(0, 65, 101, 0.1);
+            border-top: 3px solid #004165;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px auto;
+          }
+          .font-display { font-family: 'Fraunces', serif; }
+        `}</style>
+        <div className="spinner" />
+        <p className="font-display" style={{ fontSize: 18, color: INK, margin: 0, fontWeight: 500 }}>
+          Loading Member Portal
+        </p>
+        <p style={{ fontSize: 12, color: INK_MUTED, marginTop: 4, fontFamily: "Inter, sans-serif" }}>
+          Retrieving meeting sheet...
+        </p>
+      </div>
     </Centered>
   );
 

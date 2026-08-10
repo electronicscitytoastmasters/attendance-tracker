@@ -237,6 +237,19 @@ const FontStyle = () => (
     .tab-active  { border-bottom: 3px solid ${TM_BLUE}; }
     ::-webkit-scrollbar       { height: 8px; width: 8px; }
     ::-webkit-scrollbar-thumb { background: ${LINE}; border-radius: 4px; }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(0, 65, 101, 0.1);
+      border-top: 3px solid ${TM_BLUE};
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px auto;
+    }
   `}</style>
 );
 
@@ -306,7 +319,7 @@ export default function AttendanceTracker() {
         sessionsArr = s;
         if (!sessionsArr || sessionsArr.length === 0) {
           sessionsArr = allSaturdaysInRange(termObj.start, termObj.end).map(
-            (date) => ({ id: uid(), date, label: `Saturday, ${fmtDate(date)}` }),
+            (date) => ({ id: date, date, label: `Saturday, ${fmtDate(date)}` }),
           );
           await setJSON("sessions", sessionsArr);
         } else {
@@ -421,7 +434,7 @@ export default function AttendanceTracker() {
 
     let sess = sessions.find((s) => s.date === satDateStr);
     if (!sess) {
-      sess = { id: uid(), date: satDateStr, label: `Saturday, ${fmtDate(satDateStr)}` };
+      sess = { id: satDateStr, date: satDateStr, label: `Saturday, ${fmtDate(satDateStr)}` };
       await saveSessions([...sessions, sess]);
       setAttByS((prev) => ({ ...prev, [sess.id]: {} }));
     }
@@ -442,7 +455,7 @@ export default function AttendanceTracker() {
     await setJSON("archiveIndex", idx);
 
     const newSessions = allSaturdaysInRange(nt.start, nt.end).map((date) => ({
-      id: uid(), date, label: `Saturday, ${fmtDate(date)}`,
+      id: date, date, label: `Saturday, ${fmtDate(date)}`,
     }));
     await setJSON("sessions", newSessions);
     await setJSON("activeSessionId", "");
@@ -493,8 +506,13 @@ export default function AttendanceTracker() {
       <div className="min-h-screen flex items-center justify-center font-body"
         style={{ background: PAPER, color: INK_MUTED, minHeight: "100svh" }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
-          <p>Loading roster…</p>
+          <div className="spinner" />
+          <p className="font-display" style={{ fontSize: 18, color: INK, margin: 0, fontWeight: 500 }}>
+            Loading Attendance Tracker
+          </p>
+          <p style={{ fontSize: 12, color: INK_MUTED, marginTop: 4 }}>
+            Connecting to Google Sheets...
+          </p>
         </div>
       </div>
     );

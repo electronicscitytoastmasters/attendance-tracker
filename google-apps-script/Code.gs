@@ -184,13 +184,13 @@ function doGet(e) {
     const p = e.parameter || {};
     const key = p.key || "";
 
-    // Verify PIN for admin reads
     const activeSessionId = cfgGet("active_session_id") || "";
     const isPublicRead = (
       key === "" || // health check
       key === "members" ||
       key === "sessions" ||
       key === "activeSessionId" ||
+      key === "all" ||
       (key === "att" && p.session_id === activeSessionId)
     );
     if (!isPublicRead) {
@@ -211,12 +211,21 @@ function doGet(e) {
       const s = cfgGet("term_start"), en = cfgGet("term_end"), l = cfgGet("term_label");
       const term = s ? { start: s, end: en, label: l } : null;
 
+      const dateToSessionId = {};
+      sessions.forEach(sess => {
+        dateToSessionId[sess.date] = sess.id;
+      });
+
       const attendance = {};
       sessions.forEach(sess => {
         attendance[sess.id] = {};
       });
       readRows(TABS.ATTEND).forEach(r => {
-        const sid = r._session_id;
+        let sid = r._session_id;
+        if (!attendance[sid] && r.session_date && dateToSessionId[r.session_date]) {
+          sid = dateToSessionId[r.session_date];
+        }
+        if (!sid) return;
         if (!attendance[sid]) {
           attendance[sid] = {};
         }
@@ -250,9 +259,11 @@ function doGet(e) {
 
     } else if (key === "att") {
       const sid = p.session_id || "";
+      const sessions = readRows(TABS.SESSIONS);
+      const sess = sessions.find(s => s._id === sid || s.date === sid);
       const result = {};
       readRows(TABS.ATTEND)
-        .filter(r => r._session_id === sid)
+        .filter(r => r._session_id === sid || (sess && r.session_date === sess.date))
         .forEach(r => {
           result[r._member_id] = {
             p:    r.present === "Yes",

@@ -705,7 +705,7 @@ function DashboardCanvas({ selectedMonth, ms, stats, isExport = false }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function MonthlyReport({ members, sessions, attByS, stats, term }) {
-   const [subView, setSubView] = useState("dashboard");
+  const [subView, setSubView] = useState("dashboard");
   const [exporting, setExporting] = useState(null);
   const [containerW, setContainerW] = useState(CANVAS_W);
   const [searchQuery, setSearchQuery] = useState("");
