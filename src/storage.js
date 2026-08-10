@@ -552,6 +552,7 @@ function _localSet(key, value) {
 //   local optimistic cache.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const _sheetsCache = {};
 let _lastWriteTime = 0;
 const WRITE_COOLDOWN_MS = 10000; // 10 seconds
 
