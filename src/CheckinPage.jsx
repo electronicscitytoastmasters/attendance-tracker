@@ -58,9 +58,13 @@ export default function CheckinPage() {
   const [justStamped,   setJustStamped]   = useState(null);
   const [status,        setStatus]        = useState("loading"); // "loading"|"ok"|"error"
   const [lastUpdated,   setLastUpdated]   = useState(null);
+  const [actualError,   setActualError]   = useState(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   // ── Data loader ─────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
+    setActualError(null);
+    setShowErrorDetails(false);
     try {
       const [membersData, sessionsData, activeId] = await Promise.all([
         getJSON("members"),
@@ -86,6 +90,7 @@ export default function CheckinPage() {
       setStatus("ok");
     } catch (e) {
       console.error("CheckinPage: loadData failed", e);
+      setActualError(e);
       setStatus("error");
     }
   }, []);
@@ -203,18 +208,52 @@ export default function CheckinPage() {
 
   if (status === "error") return (
     <Centered>
-      <div style={{ maxWidth: 340, textAlign: "center", fontFamily: "Inter, sans-serif", padding: 24 }}>
+      <div style={{ maxWidth: 440, textAlign: "center", fontFamily: "Inter, sans-serif", padding: 24 }}>
         <div style={{ fontSize: 36, marginBottom: 12 }}>📡</div>
         <p style={{ fontWeight: 600, color: INK, marginBottom: 8 }}>Couldn't connect</p>
         <p style={{ fontSize: 14, color: INK_MUTED, marginBottom: 16 }}>
           Check your internet connection, then try again.
         </p>
-        <button
-          onClick={() => { setStatus("loading"); loadData(); }}
-          style={{ fontSize: 14, padding: "8px 18px", borderRadius: 8, background: INK, color: PAPER, border: "none", cursor: "pointer", fontWeight: 500 }}
-        >
-          Retry
-        </button>
+        
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 16 }}>
+          <button
+            onClick={() => { setStatus("loading"); loadData(); }}
+            style={{ fontSize: 14, padding: "8px 18px", borderRadius: 8, background: INK, color: PAPER, border: "none", cursor: "pointer", fontWeight: 500 }}
+          >
+            Retry
+          </button>
+          
+          {actualError && (
+            <button
+              onClick={() => setShowErrorDetails(prev => !prev)}
+              style={{ fontSize: 14, padding: "8px 18px", borderRadius: 8, background: "none", color: INK_MUTED, border: `1px solid ${LINE}`, cursor: "pointer", fontWeight: 500 }}
+            >
+              {showErrorDetails ? "Hide details" : "Show details"}
+            </button>
+          )}
+        </div>
+
+        {showErrorDetails && actualError && (
+          <div style={{
+            marginTop: 16, padding: 12, borderRadius: 6,
+            background: "#F7F5EC", border: `1px solid ${LINE}`,
+            textAlign: "left", width: "100%", boxSizing: "border-box",
+            overflowX: "auto",
+          }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "red", marginBottom: 4 }}>
+              Error: {actualError.message || String(actualError)}
+            </p>
+            {actualError.stack && (
+              <pre style={{
+                fontSize: 11, color: INK_MUTED, margin: 0,
+                fontFamily: "IBM Plex Mono, monospace", whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+              }}>
+                {actualError.stack}
+              </pre>
+            )}
+          </div>
+        )}
       </div>
     </Centered>
   );
