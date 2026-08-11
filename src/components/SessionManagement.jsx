@@ -3,9 +3,9 @@
  */
 
 import React, { useState } from "react";
-import { Calendar, Plus, Trash2, CalendarDays } from "lucide-react";
+import { Calendar, Plus, Trash2, CalendarDays, Play, Square, Zap } from "lucide-react";
 import { COLORS } from "../constants/theme.js";
-import { fmtDate, allSaturdaysInRange, termForDate, todayStr } from "../utils/dateUtils.js";
+import { fmtDate, allSaturdaysInRange, termForDate, todayStr, upcomingSaturdayStr } from "../utils/dateUtils.js";
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -14,6 +14,9 @@ export default function SessionManagement({
   term,
   onSaveSessions,
   onSaveTerm,
+  activeSessionId,
+  onStartRollCall,
+  onStopRollCall,
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [date, setDate] = useState("");
@@ -21,6 +24,31 @@ export default function SessionManagement({
 
   const today = todayStr();
   const sorted = sessions.slice().sort((a, b) => a.date.localeCompare(b.date));
+
+  const saturdayDate = upcomingSaturdayStr();
+  const saturdaySession = sessions.find((s) => s.date === saturdayDate);
+  const isSaturdayActive = activeSessionId && (saturdaySession?.id === activeSessionId || activeSessionId === `s_${saturdayDate}`);
+
+  const handleOpenSaturdayRollCall = async () => {
+    if (isSaturdayActive) {
+      if (onStopRollCall) await onStopRollCall();
+      return;
+    }
+
+    if (saturdaySession) {
+      if (onStartRollCall) await onStartRollCall(saturdaySession.id);
+    } else {
+      const newSessId = `s_${saturdayDate}`;
+      const newSess = {
+        id: newSessId,
+        date: saturdayDate,
+        label: `Meeting (${fmtDate(saturdayDate)})`,
+      };
+      const updated = [...sessions, newSess].sort((a, b) => a.date.localeCompare(b.date));
+      if (onSaveSessions) await onSaveSessions(updated);
+      if (onStartRollCall) await onStartRollCall(newSessId);
+    }
+  };
 
   const handleAddSession = () => {
     if (!date) return;
@@ -66,14 +94,44 @@ export default function SessionManagement({
           </p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {/* Quick Open Saturday Roll Call Button */}
+          <button
+            onClick={handleOpenSaturdayRollCall}
+            className="app-button"
+            style={{
+              background: isSaturdayActive ? "#DC2626" : `linear-gradient(135deg, ${COLORS.TM_BLUE} 0%, #0f3d61 100%)`,
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            }}
+          >
+            {isSaturdayActive ? (
+              <>
+                <Square size={15} fill="white" /> Close Roll Call ({fmtDate(saturdayDate)})
+              </>
+            ) : (
+              <>
+                ⚡ Open this Saturday's roll call ({fmtDate(saturdayDate)})
+              </>
+            )}
+          </button>
+
           <button
             onClick={() => setShowAddModal(true)}
             className="app-button"
             style={{
-              background: COLORS.TM_BLUE,
-              color: "white",
-              border: "none",
+              background: "white",
+              color: COLORS.INK,
+              border: `1px solid ${COLORS.LINE}`,
               borderRadius: 8,
               padding: "8px 14px",
               fontSize: 13,

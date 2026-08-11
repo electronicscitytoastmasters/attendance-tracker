@@ -4,9 +4,10 @@
  */
 
 import React, { useState } from "react";
-import { Calendar, Play, Square, QrCode, Download, RefreshCw, CheckCircle2, Shield, AlertCircle } from "lucide-react";
+import { Calendar, Play, Square, QrCode, Download, RefreshCw, CheckCircle2, Shield, AlertCircle, RotateCcw, X, Lock } from "lucide-react";
 import { COLORS } from "../constants/theme.js";
 import { todayStr, fmtDate, fmtTimeIST, termForDate, nextTermOf, upcomingSaturdayStr } from "../utils/dateUtils.js";
+import { getJSON } from "../storage.js";
 
 export default function AdminTab({
   term,
@@ -17,12 +18,49 @@ export default function AdminTab({
   onStartRollCall,
   onStopRollCall,
   onOpenArchiveModal,
+  onRestoreTerm,
   onSaveSessions,
   onToggleAttendance,
   onExportExcel,
 }) {
   const [correctingSessionId, setCorrectingSessionId] = useState("");
   const [copiedLink, setCopiedLink] = useState("");
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [archivedTerms, setArchivedTerms] = useState([]);
+  const [selectedRestoreKey, setSelectedRestoreKey] = useState("");
+  const [restoreConfirmText, setRestoreConfirmText] = useState("");
+  const [restoring, setRestoring] = useState(false);
+
+  const openRestoreModal = async () => {
+    try {
+      const idx = (await getJSON("archiveIndex")) || [];
+      setArchivedTerms(idx);
+      if (idx.length > 0) {
+        setSelectedRestoreKey(idx[idx.length - 1].start);
+      }
+    } catch (e) {
+      console.error("Failed to load archive index", e);
+    }
+    setRestoreConfirmText("");
+    setShowRestoreModal(true);
+  };
+
+  const handleConfirmRestore = async () => {
+    if (restoreConfirmText.trim().toUpperCase() !== "RESTORE" || !selectedRestoreKey) return;
+    setRestoring(true);
+    try {
+      if (onRestoreTerm) {
+        await onRestoreTerm(selectedRestoreKey);
+      }
+      setShowRestoreModal(false);
+      setRestoreConfirmText("");
+    } catch (e) {
+      console.error("Failed to restore term", e);
+      alert("Failed to restore term. Please try again.");
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const currentTerm = term || termForDate(todayStr());
   const nextTerm = nextTermOf(currentTerm);
@@ -117,7 +155,7 @@ export default function AdminTab({
           </p>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <button
             onClick={onOpenArchiveModal}
             style={{
@@ -132,17 +170,177 @@ export default function AdminTab({
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              width: "fit-content",
               boxShadow: "0 2px 8px rgba(0,65,101,0.2)",
             }}
           >
             <RefreshCw size={16} /> Start Next Term ({nextTerm.label})
           </button>
-          <p style={{ margin: 0, fontSize: 12, color: COLORS.INK_MUTED, lineHeight: 1.4 }}>
-            This archives the current matrix and starts a clean one for <strong>{nextTerm.label}</strong>. Your member roster carries over automatically.
-          </p>
+
+          <button
+            onClick={openRestoreModal}
+            style={{
+              background: "white",
+              color: COLORS.INK,
+              border: `1px solid ${COLORS.LINE}`,
+              borderRadius: 8,
+              padding: "12px 18px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <RotateCcw size={16} color={COLORS.TM_BLUE} /> Undo / Restore Term
+          </button>
         </div>
+
+        <p style={{ margin: 0, fontSize: 12, color: COLORS.INK_MUTED, lineHeight: 1.4 }}>
+          Starting a new term requires confirmation (typing CONFIRM). If you accidentally start a new term, click <strong>Undo / Restore Term</strong> to rollback immediately.
+        </p>
       </div>
+
+      {/* RESTORE TERM MODAL */}
+      {showRestoreModal && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(15, 23, 42, 0.75)",
+          backdropFilter: "blur(6px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: 20,
+        }}>
+          <div style={{
+            background: "white",
+            borderRadius: 16,
+            padding: 28,
+            maxWidth: 480,
+            width: "100%",
+            boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+            position: "relative",
+            border: `1px solid ${COLORS.LINE}`,
+          }}>
+            <button
+              onClick={() => setShowRestoreModal(false)}
+              style={{
+                position: "absolute",
+                top: 16,
+                right: 16,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: COLORS.INK_MUTED,
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <h3 className="font-display" style={{ margin: "0 0 6px", fontSize: 20, color: COLORS.INK, display: "flex", alignItems: "center", gap: 8 }}>
+              <RotateCcw color={COLORS.TM_BLUE} size={22} /> Undo Rollover / Restore Archived Term
+            </h3>
+
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: COLORS.INK_MUTED, lineHeight: 1.5 }}>
+              Select an archived term below to restore its sessions, attendance, and settings back into the active tracker.
+            </p>
+
+            {archivedTerms.length === 0 ? (
+              <div style={{ padding: 20, textAlign: "center", background: "#F8FAFC", borderRadius: 8, fontSize: 13, color: COLORS.INK_MUTED, marginBottom: 16 }}>
+                No archived terms found in storage to restore.
+              </div>
+            ) : (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: COLORS.INK_MUTED, marginBottom: 6 }}>
+                  Select Term to Restore:
+                </label>
+                <select
+                  value={selectedRestoreKey}
+                  onChange={(e) => setSelectedRestoreKey(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${COLORS.LINE}`,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    outline: "none",
+                  }}
+                >
+                  {archivedTerms.map((t) => (
+                    <option key={t.start} value={t.start}>
+                      {t.label} (Start: {t.start})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Security Challenge for Restore */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: COLORS.INK, marginBottom: 6 }}>
+                Security Check: Type <span style={{ color: COLORS.TM_BLUE, letterSpacing: "0.05em" }}>RESTORE</span> to authorize rollback
+              </label>
+              <input
+                type="text"
+                placeholder="Type RESTORE here..."
+                value={restoreConfirmText}
+                onChange={(e) => setRestoreConfirmText(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: `2px solid ${restoreConfirmText.trim().toUpperCase() === "RESTORE" ? "#10B981" : COLORS.LINE}`,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                onClick={() => setShowRestoreModal(false)}
+                disabled={restoring}
+                style={{
+                  background: COLORS.PAPER_RAISED,
+                  color: COLORS.INK,
+                  border: `1px solid ${COLORS.LINE}`,
+                  borderRadius: 8,
+                  padding: "9px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmRestore}
+                disabled={restoreConfirmText.trim().toUpperCase() !== "RESTORE" || restoring || !selectedRestoreKey}
+                style={{
+                  background: restoreConfirmText.trim().toUpperCase() === "RESTORE" ? COLORS.TM_BLUE : "#CBD5E1",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "9px 18px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: restoreConfirmText.trim().toUpperCase() === "RESTORE" ? "pointer" : "not-allowed",
+                  boxShadow: restoreConfirmText.trim().toUpperCase() === "RESTORE" ? "0 2px 8px rgba(0,65,101,0.3)" : "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {restoring ? "Restoring..." : "Restore Archived Term"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. SINGLE-CLICK ROLL CALL CONTROLS */}
       <div style={{

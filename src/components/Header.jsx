@@ -14,6 +14,9 @@ export default function Header({
   sessions,
   activeSessionId,
   term,
+  viewTermKey,
+  archiveIndex,
+  onSelectTerm,
   onExportExcel,
   onOpenArchiveModal,
   storageMode,
@@ -53,15 +56,53 @@ export default function Header({
             }}>
               Electronics City Toastmasters
             </h1>
-            <p className="font-mono" style={{
-              fontSize: 11,
-              color: COLORS.TM_GOLD,
-              margin: "3px 0 0 0",
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-            }}>
-              ATTENDANCE TRACKER {term ? `• ${term.label}` : ""}
-            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 3 }}>
+              <p className="font-mono" style={{
+                fontSize: 11,
+                color: COLORS.TM_GOLD,
+                margin: 0,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+              }}>
+                ATTENDANCE TRACKER
+              </p>
+
+              {/* Term Selector Pill */}
+              {term && (
+                <div style={{ position: "relative", display: "inline-block" }}>
+                  <select
+                    value={viewTermKey || "active"}
+                    onChange={(e) => onSelectTerm && onSelectTerm(e.target.value)}
+                    style={{
+                      background: viewTermKey && viewTermKey !== "active" ? "#F59E0B" : "rgba(255,255,255,0.18)",
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.3)",
+                      borderRadius: 14,
+                      padding: "2px 10px 2px 24px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      outline: "none",
+                      appearance: "none",
+                      WebkitAppearance: "none",
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                      backgroundRepeat: "no-repeat",
+                      backgroundPosition: "right 8px center",
+                      paddingRight: 22,
+                    }}
+                  >
+                    <option value="active" style={{ color: "#0F172A", fontWeight: 700 }}>
+                      🗓️ {term.label} (Active)
+                    </option>
+                    {(archiveIndex || []).map((t) => (
+                      <option key={t.start} value={t.start} style={{ color: "#0F172A", fontWeight: 600 }}>
+                        🕒 {t.label} (Archived)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

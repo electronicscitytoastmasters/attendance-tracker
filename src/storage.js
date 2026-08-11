@@ -49,7 +49,7 @@ const TAB = {
 // so the spreadsheet is readable without scrolling right.
 const HEADERS = {
   [TAB.CONFIG]: ["key", "value"],
-  [TAB.MEMBERS]: ["name", "is_ec", "join_date", "leave_date", "_id"],
+  [TAB.MEMBERS]: ["name", "is_ec", "join_date", "leave_date", "customer_id", "email", "phone", "paid_until", "credentials", "address", "pathways", "_id"],
   [TAB.SESSIONS]: ["date", "label", "_id"],
   [TAB.ATTEND]: ["session_date", "member_name", "present", "mode", "checked_in_ist",
     "_session_id", "_member_id", "_timestamp_utc"],
@@ -298,6 +298,13 @@ async function _excelGet(key) {
       ec: r.is_ec === "Yes",
       joinDate: r.join_date || null,
       leaveDate: r.leave_date || null,
+      customerId: r.customer_id || "",
+      email: r.email || "",
+      phone: r.phone || "",
+      paidUntil: r.paid_until || "",
+      credentials: r.credentials || "",
+      address: r.address || "",
+      pathways: r.pathways || "",
     }));
     _cache.members = list;
     return list;
@@ -398,8 +405,18 @@ async function _excelSet(key, value) {
   if (key === "members") {
     _cache.members = value;
     _writeTab(TAB.MEMBERS, HEADERS[TAB.MEMBERS], value.map((m) => ({
-      name: m.name, is_ec: m.ec ? "Yes" : "",
-      join_date: m.joinDate || "", leave_date: m.leaveDate || "", _id: m.id,
+      name: m.name,
+      is_ec: m.ec ? "Yes" : "",
+      join_date: m.joinDate || "",
+      leave_date: m.leaveDate || "",
+      customer_id: m.customerId || "",
+      email: m.email || "",
+      phone: m.phone || "",
+      paid_until: m.paidUntil || "",
+      credentials: m.credentials || "",
+      address: m.address || "",
+      pathways: m.pathways || "",
+      _id: m.id,
     })));
     await _flushNow();
     return;

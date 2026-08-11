@@ -24,13 +24,11 @@ export function todayStr() {
   return toLocalDateStr(nowIST());
 }
 
-export function fmtDate(dStr) {
+export function fmtDate(dStr, includeYear = true) {
   if (!dStr) return "";
-  return new Date(dStr + "T00:00:00Z").toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  const opts = { month: "short", day: "numeric", timeZone: "UTC" };
+  if (includeYear) opts.year = "numeric";
+  return new Date(dStr + "T00:00:00Z").toLocaleDateString(undefined, opts);
 }
 
 export function fmtTimeIST(iso) {

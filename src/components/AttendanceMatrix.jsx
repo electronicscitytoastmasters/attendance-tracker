@@ -24,9 +24,9 @@ export default function AttendanceMatrix({
     return sessions.slice().sort((a, b) => a.date.localeCompare(b.date));
   }, [sessions]);
 
-  // Filter & sort members
+  // Filter & sort members (Exclude members who have left the club)
   const filteredMembers = useMemo(() => {
-    let list = members.slice();
+    let list = members.filter((m) => !m.leaveDate);
     if (ecOnly) {
       list = list.filter((m) => m.ec);
     }
