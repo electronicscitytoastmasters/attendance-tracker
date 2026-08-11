@@ -24,7 +24,7 @@ const TABS = {
 
 const HEADERS = {
   [TABS.CONFIG]:   ["key",          "value"],
-  [TABS.MEMBERS]:  ["name",         "is_ec",      "join_date",  "leave_date",  "_id"],
+  [TABS.MEMBERS]:  ["name",         "is_ec",      "join_date",  "leave_date",  "customer_id", "email", "phone", "paid_until", "credentials", "address", "pathways", "_id"],
   [TABS.SESSIONS]: ["date",         "label",       "_id"],
   [TABS.ATTEND]:   ["session_date", "member_name", "present",   "mode",
                     "checked_in_ist", "_session_id", "_member_id", "_timestamp_utc"],
@@ -53,12 +53,17 @@ function ensureHeader(sheet, header) {
   }
 }
 
+const _readRowsCache = {};
+
 /** Read all data rows as array of plain objects */
 function readRows(sheetName) {
+  if (_readRowsCache[sheetName]) {
+    return _readRowsCache[sheetName];
+  }
   const sheet = ss().getSheetByName(sheetName);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const [header, ...rows] = sheet.getDataRange().getValues();
-  return rows
+  const data = rows
     .filter(r => r.some(c => c !== ""))  // skip completely empty rows
     .map(r => Object.fromEntries(header.map((h, i) => {
       let val = r[i];
@@ -75,10 +80,13 @@ function readRows(sheetName) {
       }
       return [h, String(val ?? "").trim()];
     })));
+  _readRowsCache[sheetName] = data;
+  return data;
 }
 
 /** Overwrite a tab: clear content, write header + rows */
 function writeRows(sheetName, header, rows, skipResize) {
+  delete _readRowsCache[sheetName];
   const sheet = getOrCreate(sheetName);
   sheet.clearContents();
   const all = [header, ...rows.map(r => header.map(h => r[h] ?? ""))];
@@ -99,6 +107,7 @@ function cfgGet(key) {
 }
 
 function cfgSet(updates) {
+  delete _readRowsCache[TABS.CONFIG];
   const sheet = getOrCreate(TABS.CONFIG);
   ensureHeader(sheet, HEADERS[TABS.CONFIG]);
   // Build lookup of existing key → row number (1-indexed, +1 for header)
@@ -203,6 +212,9 @@ function doGet(e) {
       const members = readRows(TABS.MEMBERS).map(r => ({
         id: r._id, name: r.name, ec: r.is_ec === "Yes",
         joinDate: r.join_date || null, leaveDate: r.leave_date || null,
+        customerId: r.customer_id || "", email: r.email || "", phone: r.phone || "",
+        paidUntil: r.paid_until || "", credentials: r.credentials || "",
+        address: r.address || "", pathways: r.pathways || "",
       }));
       const sessions = readRows(TABS.SESSIONS).map(r => ({
         id: r._id, date: r.date, label: r.label,
@@ -243,6 +255,9 @@ function doGet(e) {
       data = readRows(TABS.MEMBERS).map(r => ({
         id: r._id, name: r.name, ec: r.is_ec === "Yes",
         joinDate: r.join_date || null, leaveDate: r.leave_date || null,
+        customerId: r.customer_id || "", email: r.email || "", phone: r.phone || "",
+        paidUntil: r.paid_until || "", credentials: r.credentials || "",
+        address: r.address || "", pathways: r.pathways || "",
       }));
 
     } else if (key === "sessions") {
@@ -318,7 +333,10 @@ function doPost(e) {
     if (key === "members") {
       writeRows(TABS.MEMBERS, HEADERS[TABS.MEMBERS], body.data.map(m => ({
         name: m.name, is_ec: m.ec ? "Yes" : "", join_date: m.joinDate || "",
-        leave_date: m.leaveDate || "", _id: m.id,
+        leave_date: m.leaveDate || "", customer_id: m.customerId || "",
+        email: m.email || "", phone: m.phone || "", paid_until: m.paidUntil || "",
+        credentials: m.credentials || "", address: m.address || "",
+        pathways: m.pathways || "", _id: m.id,
       })));
 
     } else if (key === "sessions") {

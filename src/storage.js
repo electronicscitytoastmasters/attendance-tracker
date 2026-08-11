@@ -21,8 +21,15 @@
  *   For "excel":  call initStorage() on app startup (App.jsx already does this).
  */
 
-import * as XLSX from "xlsx";
 import { idbGet, idbSet } from "./idb.js";
+
+let _XLSXModule = null;
+async function _getXLSX() {
+  if (!_XLSXModule) {
+    _XLSXModule = await import("xlsx");
+  }
+  return _XLSXModule;
+}
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 export const MODE = "sheets";   // "local" | "excel" | "sheets"
@@ -42,7 +49,7 @@ const TAB = {
 // so the spreadsheet is readable without scrolling right.
 const HEADERS = {
   [TAB.CONFIG]: ["key", "value"],
-  [TAB.MEMBERS]: ["name", "is_ec", "join_date", "leave_date", "_id"],
+  [TAB.MEMBERS]: ["name", "is_ec", "join_date", "leave_date", "customer_id", "email", "phone", "paid_until", "credentials", "address", "pathways", "_id"],
   [TAB.SESSIONS]: ["date", "label", "_id"],
   [TAB.ATTEND]: ["session_date", "member_name", "present", "mode", "checked_in_ist",
     "_session_id", "_member_id", "_timestamp_utc"],
@@ -291,6 +298,13 @@ async function _excelGet(key) {
       ec: r.is_ec === "Yes",
       joinDate: r.join_date || null,
       leaveDate: r.leave_date || null,
+      customerId: r.customer_id || "",
+      email: r.email || "",
+      phone: r.phone || "",
+      paidUntil: r.paid_until || "",
+      credentials: r.credentials || "",
+      address: r.address || "",
+      pathways: r.pathways || "",
     }));
     _cache.members = list;
     return list;
@@ -391,8 +405,18 @@ async function _excelSet(key, value) {
   if (key === "members") {
     _cache.members = value;
     _writeTab(TAB.MEMBERS, HEADERS[TAB.MEMBERS], value.map((m) => ({
-      name: m.name, is_ec: m.ec ? "Yes" : "",
-      join_date: m.joinDate || "", leave_date: m.leaveDate || "", _id: m.id,
+      name: m.name,
+      is_ec: m.ec ? "Yes" : "",
+      join_date: m.joinDate || "",
+      leave_date: m.leaveDate || "",
+      customer_id: m.customerId || "",
+      email: m.email || "",
+      phone: m.phone || "",
+      paid_until: m.paidUntil || "",
+      credentials: m.credentials || "",
+      address: m.address || "",
+      pathways: m.pathways || "",
+      _id: m.id,
     })));
     await _flushNow();
     return;
@@ -564,22 +588,24 @@ function _localSet(key, value) {
 const _sheetsCache = {};
 let _lastWriteTime = 0;
 const WRITE_COOLDOWN_MS = 10000; // 10 seconds
+const CACHE_TTL_MS = 15000;      // 15 seconds
 
 async function _sheetsGet(key) {
-  // If a local write occurred very recently, rely on our local cache for key state keys
+  // If a local write occurred very recently, or the cache entry is fresh within TTL, reuse it.
   const now = Date.now();
   const withinCooldown = (now - _lastWriteTime) < WRITE_COOLDOWN_MS;
+  const cached = _sheetsCache[key];
 
-  if (withinCooldown && _sheetsCache[key] !== undefined) {
-    return _sheetsCache[key];
+  if (cached !== undefined) {
+    const isFresh = (now - cached.timestamp) < CACHE_TTL_MS;
+    if (withinCooldown || isFresh) {
+      return cached.value;
+    }
   }
 
-  // Clear cache if we are outside cooldown to perform actual remote reads
-  if (!withinCooldown) {
-    delete _sheetsCache[key];
-  }
+  // Clear cache if we are outside cooldown/TTL to perform actual remote reads
+  delete _sheetsCache[key];
 
-  if (_sheetsCache[key] !== undefined) return _sheetsCache[key];
   try {
     const params = _getParams(key);
     const pin = sessionStorage.getItem("ecat_admin_pin");
@@ -591,29 +617,30 @@ async function _sheetsGet(key) {
       return null;
     }
     const data = json.data;
+    const cacheTimestamp = Date.now();
     if (key === "all") {
       if (!data || !data.members) {
         console.warn("sheetsGet key 'all' returned invalid/old Apps Script structure:", data);
         return null;
       }
       _cache.members = data.members;
-      _sheetsCache["members"] = data.members;
+      _sheetsCache["members"] = { value: data.members, timestamp: cacheTimestamp };
       _cache.sessions = data.sessions;
-      _sheetsCache["sessions"] = data.sessions;
-      _sheetsCache["activeSessionId"] = data.activeSessionId ?? "";
-      _sheetsCache["term"] = data.term ?? null;
+      _sheetsCache["sessions"] = { value: data.sessions, timestamp: cacheTimestamp };
+      _sheetsCache["activeSessionId"] = { value: data.activeSessionId ?? "", timestamp: cacheTimestamp };
+      _sheetsCache["term"] = { value: data.term ?? null, timestamp: cacheTimestamp };
       if (data.attendance) {
         Object.entries(data.attendance).forEach(([sid, att]) => {
-          _sheetsCache[`att:${sid}`] = att;
+          _sheetsCache[`att:${sid}`] = { value: att, timestamp: cacheTimestamp };
         });
       }
-      _sheetsCache["all"] = data;
+      _sheetsCache["all"] = { value: data, timestamp: cacheTimestamp };
       return data;
     }
     if (key === "members") _cache.members = data;
     if (key === "sessions") _cache.sessions = data;
-    _sheetsCache[key] = data ?? null;
-    return _sheetsCache[key];
+    _sheetsCache[key] = { value: data ?? null, timestamp: cacheTimestamp };
+    return data ?? null;
   } catch (e) {
     console.error("sheetsGet failed", key, e);
     return null;
@@ -623,7 +650,7 @@ async function _sheetsGet(key) {
 async function _sheetsSet(key, value) {
   _lastWriteTime = Date.now();
   // Optimistic local update — POST is fire-and-forget (no-cors)
-  _sheetsCache[key] = value;
+  _sheetsCache[key] = { value, timestamp: Date.now() };
   if (key === "members") _cache.members = value;
   if (key === "sessions") _cache.sessions = value;
 
@@ -676,6 +703,13 @@ export function getFileName() {
   return _fh?.name || "";
 }
 
+export function invalidateStorageCache() {
+  Object.keys(_sheetsCache).forEach((k) => delete _sheetsCache[k]);
+  _cache.members = null;
+  _cache.sessions = null;
+  _lastWriteTime = 0;
+}
+
 export async function getJSON(key) {
   if (MODE === "excel") return await _excelGet(key);
   if (MODE === "sheets") return _sheetsGet(key);
@@ -687,3 +721,4 @@ export async function setJSON(key, value) {
   if (MODE === "sheets") { await _sheetsSet(key, value); return; }
   _localSet(key, value);
 }
+
